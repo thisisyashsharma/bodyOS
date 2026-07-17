@@ -15,6 +15,7 @@ interface MetricsChartProps {
   minYValue?: number;
   maxYValue?: number;
   height?: number;
+  onDaySelect?: (dateStr: string) => void;
 }
 
 type TabKey = 'Day' | 'Week' | 'Month' | 'Year';
@@ -46,6 +47,15 @@ function addDays(d: Date, n: number): Date {
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
+}
+
+function getWeekOffset(targetDate: Date): number {
+  const today = new Date();
+  const thisWeekStart = startOfWeek(today);
+  const targetWeekStart = startOfWeek(targetDate);
+  const msDiff = targetWeekStart.getTime() - thisWeekStart.getTime();
+  const dayDiff = msDiff / (24 * 60 * 60 * 1000);
+  return Math.round(dayDiff / 7);
 }
 
 const SHORT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -186,12 +196,42 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
   minYValue,
   maxYValue,
   height = 220,
+  onDaySelect,
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('Week');
   const [currentOffset, setCurrentOffset] = useState(0);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [animating, setAnimating] = useState(false);
   const [hoveredCalDay, setHoveredCalDay] = useState<number | null>(null);
+
+  // Swipe Gestures for touch devices
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    setTouchStart(e.targetTouches[0].clientX);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (touchStart === null || touchEnd === null) return;
+    const diff = touchStart - touchEnd;
+    const minSwipeDistance = 50; // threshold in pixels
+
+    if (diff > minSwipeDistance) {
+      // Right-to-left swipe -> next period (future)
+      handleNext();
+    } else if (diff < -minSwipeDistance) {
+      // Left-to-right swipe -> previous period (past)
+      handlePrev();
+    }
+
+    setTouchStart(null);
+    setTouchEnd(null);
+  }, [touchStart, touchEnd]);
 
   const isMonthView = activeTab === 'Month';
 
@@ -276,11 +316,13 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
 
   const getBarX = (i: number) => barsStartX + i * (barWidth + gap);
 
-  const numTicks = 4;
-  const yTicks = Array.from({ length: numTicks }, (_, i) => {
-    const val = yMin + (i / (numTicks - 1)) * (yMax - yMin);
-    return { value: Math.round(val * 10) / 10, y: getY(val) };
-  });
+  const isTenScale = yMax === 10 || maxYValue === 10;
+  const yTicks = isTenScale
+    ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(val => ({ value: val, y: getY(val) }))
+    : Array.from({ length: 4 }, (_, i) => {
+        const val = yMin + (i / 3) * (yMax - yMin);
+        return { value: Math.round(val * 10) / 10, y: getY(val) };
+      });
 
   const gradId = `bar-grad-${(title ?? '').replace(/\s+/g, '-').toLowerCase() || 'mc'}-${colorHex.replace('#', '')}`;
   const glowId = `bar-glow-${gradId}`;
@@ -290,20 +332,21 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
 
   const getCircleSize = (value: number | null): number => {
     if (value === null) return 0;
-    const ratio = Math.max(0.15, value / maxCalValue);
-    return ratio;
+    return value / maxCalValue;
   };
 
   const getCircleColor = (value: number | null): string => {
     if (value === null) return 'transparent';
-    const ratio = Math.max(0.2, Math.min(1, value / maxCalValue));
-    // Return opacity variant of the colorHex
-    const alpha = Math.round(ratio * 255).toString(16).padStart(2, '0');
-    return `${colorHex}${alpha}`;
+    return `${colorHex}cc`; // Consistent 80% opacity
   };
 
   return (
-    <div className="w-full flex flex-col select-none">
+    <div 
+      className="w-full flex flex-col select-none"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* ── Header: Title + Tabs ──────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-3">
         {title && (
@@ -376,24 +419,27 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
 
       {/* ── MONTH CALENDAR BUBBLE VIEW ──────────────────────────────────── */}
       {isMonthView && monthCalendar && (
-        <div className="w-full">
+        <div className="w-full animate-smooth-transition">
           {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-y-1 mb-2 relative">
+          <div className="grid grid-cols-7 gap-y-1 mb-2 relative -mx-5">
             {monthCalendar.days.map((day) => {
               const ratio = getCircleSize(day.value);
-              const minPx = 24;
-              const maxPx = 44;
-              const circlePx = day.value !== null ? minPx + ratio * (maxPx - minPx) : 18;
+              const minPx = 16;
+              const maxPx = 50;
+              const circlePx = day.value !== null ? minPx + ratio * (maxPx - minPx) : 0;
               const isHovered = hoveredCalDay === day.date;
 
               return (
                 <div
                   key={day.date}
-                  className="flex items-center justify-center relative"
+                  className="flex items-center justify-center relative cursor-pointer"
                   style={{
                     gridColumn: day.dow + 1,
                     gridRow: day.week + 1,
                     height: '52px',
+                  }}
+                  onClick={() => {
+                    if (onDaySelect) onDaySelect(day.dateStr);
                   }}
                   onMouseEnter={() => setHoveredCalDay(day.date)}
                   onMouseLeave={() => setHoveredCalDay(null)}
@@ -401,36 +447,46 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
                   onTouchEnd={() => setHoveredCalDay(null)}
                 >
                   {/* Bubble circle */}
-                  <div
-                    className="rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer relative"
-                    style={{
-                      width: `${animating ? circlePx : 0}px`,
-                      height: `${animating ? circlePx : 0}px`,
-                      backgroundColor: day.value !== null ? getCircleColor(day.value) : 'rgba(51, 65, 85, 0.3)',
-                      transform: isHovered && day.value !== null ? 'scale(1.15)' : 'scale(1)',
-                      boxShadow: isHovered && day.value !== null
-                        ? `0 0 16px ${colorHex}44, 0 0 4px ${colorHex}22`
-                        : 'none',
-                      transitionDelay: `${day.date * 18}ms`,
-                    }}
-                  >
-                    <span className={`text-[11px] font-bold font-mono leading-none ${
-                      day.isToday ? 'text-white' : day.value !== null ? 'text-slate-200' : 'text-slate-500'
-                    }`}>
-                      {day.date}
-                    </span>
-                  </div>
-
-                  {/* Hover tooltip */}
-                  {isHovered && day.value !== null && (
+                  {day.value !== null ? (
                     <div
-                      className="absolute -top-9 left-1/2 -translate-x-1/2 z-20 rounded-lg py-1 px-2.5 border shadow-xl pointer-events-none text-xs font-mono backdrop-blur-md whitespace-nowrap"
+                      className="rounded-full flex items-center justify-center relative"
                       style={{
-                        backgroundColor: 'rgba(15, 23, 42, 0.92)',
-                        borderColor: `${colorHex}66`,
+                        width: `${animating ? circlePx : 0}px`,
+                        height: `${animating ? circlePx : 0}px`,
+                        backgroundColor: getCircleColor(day.value),
+                        transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                        boxShadow: isHovered
+                          ? `0 0 16px ${colorHex}44, 0 0 4px ${colorHex}22`
+                          : 'none',
+                        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        transitionDelay: `${day.date * 12}ms`,
                       }}
                     >
-                      <span className="font-bold text-slate-100">{day.value}/10</span>
+                      <span className={`text-[11px] font-bold font-mono leading-none ${
+                        day.isToday ? 'text-white' : 'text-slate-200'
+                      }`}>
+                        {day.date}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full">
+                      <span className={`text-[11px] font-medium font-mono leading-none ${
+                        day.isToday 
+                          ? 'text-slate-100 font-bold border-b border-slate-400 pb-0.5' 
+                          : 'text-slate-500/70 hover:text-slate-400 transition-colors'
+                      }`}>
+                        {day.date}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Hover tooltip - Minimal and Premium */}
+                  {isHovered && day.value !== null && (
+                    <div
+                      className="absolute -top-7 left-1/2 -translate-x-1/2 z-20 rounded-full py-0.5 px-2 bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-200 font-mono shadow-md whitespace-nowrap pointer-events-none"
+                      style={{ borderColor: `${colorHex}44` }}
+                    >
+                      {day.value}
                     </div>
                   )}
                 </div>
@@ -439,7 +495,7 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
           </div>
 
           {/* Day-of-week labels at bottom */}
-          <div className="grid grid-cols-7 mt-1 mb-1">
+          <div className="grid grid-cols-7 mt-1 mb-1 -mx-5">
             {SHORT_DAYS.map((d, i) => {
               const todayDow = (() => {
                 const td = new Date().getDay();
@@ -461,154 +517,167 @@ export const MetricsChart: React.FC<MetricsChartProps> = ({
 
       {/* ── BAR CHART (Day / Week / Year) ──────────────────────────────── */}
       {!isMonthView && (
-        <div className="relative w-full overflow-hidden">
-          {!hasBarData ? (
-            <div
-              style={{ height: svgHeight }}
-              className="w-full flex items-center justify-center text-slate-500 text-sm border border-dashed border-slate-800 rounded-xl"
-            >
-              No data for this period
-            </div>
-          ) : (
-            <>
-              <svg
-                viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                className="w-full h-auto"
-                style={{ overflow: 'visible' }}
-              >
-                <defs>
-                  <linearGradient id={gradId} x1="0" y1="1" x2="0" y2="0">
-                    <stop offset="0%" stopColor={colorHex} stopOpacity="0.6" />
-                    <stop offset="100%" stopColor={colorHex} stopOpacity="0.95" />
-                  </linearGradient>
-                  <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
-                    <feGaussianBlur stdDeviation="4" result="blur" />
-                    <feFlood floodColor={colorHex} floodOpacity="0.25" result="color" />
-                    <feComposite in="color" in2="blur" operator="in" result="shadow" />
-                    <feMerge>
-                      <feMergeNode in="shadow" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
+        <div key={activeTab} className="relative w-full overflow-hidden animate-smooth-transition">
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="w-full h-auto"
+            style={{ overflow: 'visible' }}
+          >
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%" stopColor={colorHex} stopOpacity="0.6" />
+                <stop offset="100%" stopColor={colorHex} stopOpacity="0.95" />
+              </linearGradient>
+              <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feFlood floodColor={colorHex} floodOpacity="0.25" result="color" />
+                <feComposite in="color" in2="blur" operator="in" result="shadow" />
+                <feMerge>
+                  <feMergeNode in="shadow" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
 
-                {/* Grid lines + Y labels */}
-                {yTicks.map((tick, i) => (
-                  <g key={i}>
-                    <line
-                      x1={paddingLeft} y1={tick.y}
-                      x2={svgWidth - paddingRight} y2={tick.y}
-                      stroke="#475569" strokeWidth="0.5" strokeOpacity="0.3" strokeDasharray="4 4"
-                    />
-                    <text
-                      x={paddingLeft - 8} y={tick.y + 4}
-                      textAnchor="end" fill="#94a3b8" fontSize="10" fontFamily="monospace"
-                    >
-                      {tick.value}{yLabelSuffix}
-                    </text>
-                  </g>
-                ))}
-
-                {/* Bars */}
-                {buckets.map((bucket, i) => {
-                  if (bucket.value === null) return null;
-
-                  const barX = getBarX(i);
-                  const barTopY = getY(bucket.value);
-                  const barBaseY = paddingTop + chartHeight;
-                  const fullHeight = barBaseY - barTopY;
-                  const isHovered = hoveredIndex === i;
-
-                  return (
-                    <g key={i} filter={isHovered ? `url(#${glowId})` : undefined}>
-                      <rect
-                        x={barX}
-                        y={animating ? barTopY : barBaseY}
-                        width={barWidth}
-                        height={animating ? fullHeight : 0}
-                        rx={3}
-                        fill={`url(#${gradId})`}
-                        opacity={isHovered ? 1 : 0.85}
-                        style={{
-                          transition: `y 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms, height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms, opacity 0.15s ease`,
-                        }}
-                      />
-                      {isHovered && animating && (
-                        <rect
-                          x={barX} y={barTopY}
-                          width={barWidth} height={Math.min(3, fullHeight)}
-                          rx={3} fill="#ffffff" opacity={0.5}
-                          style={{ transition: 'opacity 0.15s ease' }}
-                        />
-                      )}
-                      <rect
-                        x={barX - 4} y={paddingTop}
-                        width={barWidth + 8} height={chartHeight}
-                        fill="transparent" className="cursor-pointer"
-                        onMouseEnter={() => setHoveredIndex(i)}
-                        onMouseLeave={() => setHoveredIndex(null)}
-                        onTouchStart={() => setHoveredIndex(i)}
-                        onTouchEnd={() => setHoveredIndex(null)}
-                      />
-                    </g>
-                  );
-                })}
-
-                {/* Average Line */}
-                {hasBarData && (() => {
-                  const avgY = getY(barAverage);
-                  return (
-                    <g>
-                      <line
-                        x1={paddingLeft} y1={avgY}
-                        x2={svgWidth - paddingRight} y2={avgY}
-                        stroke={colorHex} strokeWidth="1" strokeDasharray="6 4" strokeOpacity="0.55"
-                        style={{ transition: 'y1 0.5s ease, y2 0.5s ease' }}
-                      />
-                      <text
-                        x={svgWidth - paddingRight + 4} y={avgY + 3}
-                        fontSize="9" fontFamily="monospace" fill={colorHex} opacity="0.8"
-                      >
-                        {barAverage}{yLabelSuffix}
-                      </text>
-                    </g>
-                  );
-                })()}
-
-                {/* X-axis Labels */}
-                {buckets.map((bucket, i) => {
-                  if (!bucket.label) return null;
-                  const x = getBarX(i) + barWidth / 2;
-                  return (
-                    <text
-                      key={i} x={x} y={svgHeight - 6}
-                      textAnchor="middle" fill="#64748b" fontSize="9" fontFamily="monospace"
-                    >
-                      {bucket.label}
-                    </text>
-                  );
-                })}
-              </svg>
-
-              {/* Hover Tooltip */}
-              {hoveredIndex !== null && buckets[hoveredIndex]?.value !== null && (
-                <div
-                  className="absolute z-10 rounded-lg py-1.5 px-3 border shadow-xl pointer-events-none text-xs flex flex-col font-mono backdrop-blur-md"
-                  style={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                    borderColor: `${colorHex}66`,
-                    left: `${Math.min(88, Math.max(12, ((getBarX(hoveredIndex) + barWidth / 2) / svgWidth) * 100))}%`,
-                    top: `${Math.max(2, ((getY(buckets[hoveredIndex].value!) - 44) / svgHeight) * 100)}%`,
-                    transform: 'translateX(-50%)',
-                  }}
+            {/* Grid lines + Y labels */}
+            {yTicks.map((tick, i) => (
+              <g key={i}>
+                <line
+                  x1={paddingLeft} y1={tick.y}
+                  x2={svgWidth - paddingRight} y2={tick.y}
+                  stroke="#475569" strokeWidth="0.5" strokeOpacity="0.3" strokeDasharray="4 4"
+                />
+                <text
+                  x={paddingLeft - 8} y={tick.y + 4}
+                  textAnchor="end" fill="#94a3b8" fontSize="10" fontFamily="monospace"
                 >
-                  <span className="text-[10px] text-slate-400">{buckets[hoveredIndex].dateLabel}</span>
-                  <span className="font-semibold text-slate-100 mt-0.5">
-                    {buckets[hoveredIndex].value}{yLabelSuffix}
-                  </span>
-                </div>
-              )}
-            </>
+                  {tick.value}{yLabelSuffix}
+                </text>
+              </g>
+            ))}
+
+            {/* Bars */}
+            {buckets.map((bucket, i) => {
+              if (bucket.value === null) return null;
+
+              const barX = getBarX(i);
+              const barTopY = getY(bucket.value);
+              const barBaseY = paddingTop + chartHeight;
+              const fullHeight = barBaseY - barTopY;
+              const isHovered = hoveredIndex === i;
+
+              return (
+                <g key={i} filter={isHovered ? `url(#${glowId})` : undefined}>
+                  <rect
+                    x={barX}
+                    y={animating ? barTopY : barBaseY}
+                    width={barWidth}
+                    height={animating ? fullHeight : 0}
+                    rx={3}
+                    fill={`url(#${gradId})`}
+                    opacity={isHovered ? 1 : 0.85}
+                    style={{
+                      transition: `y 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms, height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms, opacity 0.15s ease`,
+                    }}
+                  />
+                  {isHovered && animating && (
+                    <rect
+                      x={barX} y={barTopY}
+                      width={barWidth} height={Math.min(3, fullHeight)}
+                      rx={3} fill="#ffffff" opacity={0.5}
+                      style={{ transition: 'opacity 0.15s ease' }}
+                    />
+                  )}
+                  <rect
+                    x={barX - 4} y={paddingTop}
+                    width={barWidth + 8} height={chartHeight}
+                    fill="transparent" className="cursor-pointer"
+                    onMouseEnter={() => setHoveredIndex(i)}
+                    onMouseLeave={() => setHoveredIndex(null)}
+                    onTouchStart={() => setHoveredIndex(i)}
+                    onTouchEnd={() => setHoveredIndex(null)}
+                    onClick={() => {
+                      if (activeTab === 'Year') {
+                        const today = new Date();
+                        const targetYear = today.getFullYear() + currentOffset;
+                        const targetDate = new Date(targetYear, i, 1);
+                        const targetWeekOffset = getWeekOffset(targetDate);
+                        setActiveTab('Week');
+                        setCurrentOffset(targetWeekOffset);
+                      }
+                    }}
+                  />
+                </g>
+              );
+            })}
+
+            {/* Average Line */}
+            {hasBarData && (() => {
+              const avgY = getY(barAverage);
+              return (
+                <g>
+                  <line
+                    x1={paddingLeft} y1={avgY}
+                    x2={svgWidth - paddingRight} y2={avgY}
+                    stroke={colorHex} strokeWidth="1" strokeDasharray="6 4" strokeOpacity="0.55"
+                    style={{ transition: 'y1 0.5s ease, y2 0.5s ease' }}
+                  />
+                  <text
+                    x={svgWidth - paddingRight + 4} y={avgY + 3}
+                    fontSize="9" fontFamily="monospace" fill={colorHex} opacity="0.8"
+                  >
+                    {barAverage}{yLabelSuffix}
+                  </text>
+                </g>
+              );
+            })()}
+
+            {/* X-axis Labels */}
+            {buckets.map((bucket, i) => {
+              if (!bucket.label) return null;
+              const x = getBarX(i) + barWidth / 2;
+              return (
+                <text
+                  key={i} x={x} y={svgHeight - 6}
+                  textAnchor="middle" fill="#64748b" fontSize="9" fontFamily="monospace"
+                >
+                  {bucket.label}
+                </text>
+              );
+            })}
+
+            {/* Empty state label centered inside the SVG grid */}
+            {!hasBarData && (
+              <text
+                x={(svgWidth + paddingLeft - paddingRight) / 2}
+                y={paddingTop + chartHeight / 2 + 4}
+                textAnchor="middle"
+                fill="#475569"
+                fontSize="11"
+                fontFamily="sans-serif"
+                className="select-none font-semibold uppercase tracking-wider opacity-60"
+              >
+                No logs recorded
+              </text>
+            )}
+          </svg>
+
+          {/* Hover Tooltip - Minimalist Float Badge */}
+          {hoveredIndex !== null && buckets[hoveredIndex]?.value !== null && (
+            <div
+              className="absolute z-10 rounded-full w-8 h-8 flex items-center justify-center border shadow-lg pointer-events-none text-xs font-bold font-mono backdrop-blur-md transition-all duration-150 ease-out"
+              style={{
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                borderColor: colorHex,
+                left: `${Math.min(95, Math.max(5, ((getBarX(hoveredIndex) + barWidth / 2) / svgWidth) * 100))}%`,
+                top: `${Math.max(2, ((getY(buckets[hoveredIndex].value!) - 32) / svgHeight) * 100)}%`,
+                transform: 'translate(-50%, -20%)',
+                color: '#f1f5f9',
+                boxShadow: `0 0 10px ${colorHex}44`,
+              }}
+            >
+              {Math.round(buckets[hoveredIndex].value!)}
+            </div>
           )}
         </div>
       )}

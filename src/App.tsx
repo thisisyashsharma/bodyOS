@@ -33,6 +33,9 @@ const AppContent: React.FC = () => {
   
   // Data Privacy Modal state
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  
+  // "More" navigation toggle for History/Reports in sidebar & bottom nav
+  const [isNavMoreOpen, setIsNavMoreOpen] = useState(false);
 
   // Helper to check if system has any history/data
   const systemHasData = (systemId: string) => {
@@ -161,29 +164,50 @@ const AppContent: React.FC = () => {
                 <span>Overview Dashboard</span>
               </button>
 
+              {/* More Options Toggle */}
               <button
-                onClick={() => { setActivePage('timeline'); setIsMobileSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                  activePage === 'timeline'
-                    ? 'bg-slate-900 border border-slate-800 text-slate-100'
-                    : 'text-slate-400 hover:text-slate-200'
+                type="button"
+                onClick={() => setIsNavMoreOpen(!isNavMoreOpen)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
+                  (activePage === 'timeline' || activePage === 'report')
+                    ? 'text-slate-200 bg-slate-900/40'
+                    : 'text-slate-500 hover:text-slate-350 hover:bg-slate-900/20'
                 }`}
               >
-                <LucideIcons.History className="w-4 h-4" />
-                <span>Health History Log</span>
+                <span className="flex items-center gap-3">
+                  <LucideIcons.MoreHorizontal className="w-4 h-4" />
+                  <span>More</span>
+                </span>
+                <LucideIcons.ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isNavMoreOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              <button
-                onClick={() => { setActivePage('report'); setIsMobileSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                  activePage === 'report'
-                    ? 'bg-slate-900 border border-slate-800 text-slate-100'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <LucideIcons.FileText className="w-4 h-4" />
-                <span>Clinical Reports</span>
-              </button>
+              {isNavMoreOpen && (
+                <div className="pl-3 space-y-0.5 animate-fade-in">
+                  <button
+                    onClick={() => { setActivePage('timeline'); setIsMobileSidebarOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                      activePage === 'timeline'
+                        ? 'bg-slate-900/70 border border-slate-850 text-slate-100 font-semibold'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/20'
+                    }`}
+                  >
+                    <LucideIcons.History className="w-3.5 h-3.5" />
+                    <span>Health History Log</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setActivePage('report'); setIsMobileSidebarOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                      activePage === 'report'
+                        ? 'bg-slate-900/70 border border-slate-850 text-slate-100 font-semibold'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/20'
+                    }`}
+                  >
+                    <LucideIcons.FileText className="w-3.5 h-3.5" />
+                    <span>Clinical Reports</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Active Systems Index */}
@@ -324,29 +348,50 @@ const AppContent: React.FC = () => {
               <span>Overview Dashboard</span>
             </button>
 
+            {/* More Options Toggle */}
             <button
-              onClick={() => setActivePage('timeline')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                activePage === 'timeline'
-                  ? 'bg-slate-900 border border-slate-800 text-slate-100'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+              type="button"
+              onClick={() => setIsNavMoreOpen(!isNavMoreOpen)}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
+                (activePage === 'timeline' || activePage === 'report')
+                  ? 'text-slate-200 bg-slate-900/40'
+                  : 'text-slate-500 hover:text-slate-350 hover:bg-slate-900/20'
               }`}
             >
-              <LucideIcons.History className="w-4 h-4" />
-              <span>Health History Log</span>
+              <span className="flex items-center gap-3">
+                <LucideIcons.MoreHorizontal className="w-4 h-4" />
+                <span>More</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isNavMoreOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            <button
-              onClick={() => setActivePage('report')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
-                activePage === 'report'
-                  ? 'bg-slate-900 border border-slate-800 text-slate-100'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
-              }`}
-            >
-              <LucideIcons.FileText className="w-4 h-4" />
-              <span>Clinical Reports</span>
-            </button>
+            {isNavMoreOpen && (
+              <div className="pl-3 space-y-0.5 animate-fade-in">
+                <button
+                  onClick={() => setActivePage('timeline')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                    activePage === 'timeline'
+                      ? 'bg-slate-900/70 border border-slate-850 text-slate-100 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/20'
+                  }`}
+                >
+                  <LucideIcons.History className="w-3.5 h-3.5" />
+                  <span>Health History Log</span>
+                </button>
+
+                <button
+                  onClick={() => setActivePage('report')}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                    activePage === 'report'
+                      ? 'bg-slate-900/70 border border-slate-850 text-slate-100 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/20'
+                  }`}
+                >
+                  <LucideIcons.FileText className="w-3.5 h-3.5" />
+                  <span>Clinical Reports</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Active Live Systems Sub-navigation */}
@@ -483,13 +528,11 @@ const AppContent: React.FC = () => {
         </button>
 
         <button 
-          onClick={() => setActivePage('report')}
-          className={`flex flex-col items-center justify-center gap-1 w-16 h-12 rounded-xl transition-all ${
-            activePage === 'report' ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-500'
-          }`}
+          onClick={() => setIsMobileSidebarOpen(true)}
+          className={`flex flex-col items-center justify-center gap-1 w-16 h-12 rounded-xl transition-all text-slate-500`}
         >
-          <LucideIcons.FileText className="w-5 h-5" />
-          <span className="text-[9px] font-bold">Reports</span>
+          <LucideIcons.MoreHorizontal className="w-5 h-5" />
+          <span className="text-[9px] font-bold">More</span>
         </button>
       </nav>
 

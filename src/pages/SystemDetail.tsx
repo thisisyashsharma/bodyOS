@@ -21,6 +21,29 @@ const RATING_LABELS = [
   'Excellent State'     // 10
 ];
 
+const playSliderSound = (value: number) => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const freq = 250 + value * 60; 
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.2, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.16);
+  } catch (err) {
+    // console.warn('Audio Context failed to play:', err);
+  }
+};
+
 export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) => {
   const {
     systems,
@@ -29,7 +52,6 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     goals,
     metrics,
     logSystemRating,
-    updateSystemRating,
     togglePrecisionMode,
     addEvent,
     deleteEvent,
@@ -42,6 +64,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     deleteGoal,
     addMetricLog,
     deleteMetricLog,
+    updateSystemDescription,
   } = useDashboard();
 
   // Slider-first form state
@@ -53,6 +76,23 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
   const [customLogTime, setCustomLogTime] = useState('12:00');
   const [showCustomDateTime, setShowCustomDateTime] = useState(false);
 
+  // Description details state
+  const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [tempDescription, setTempDescription] = useState('');
+
+  // Three-dot header menu state
+  const [isDetailHeaderMenuOpen, setIsDetailHeaderMenuOpen] = useState(false);
+
+  // Card expansion states (subjective / precision)
+  const [isQuickRatingExpanded, setIsQuickRatingExpanded] = useState(false);
+  const [isEventLogsExpanded, setIsEventLogsExpanded] = useState(false);
+  const [isGoalsExpanded, setIsGoalsExpanded] = useState(false);
+  const [isVitalsExpanded, setIsVitalsExpanded] = useState(false);
+  const [isMedHistoryExpanded, setIsMedHistoryExpanded] = useState(false);
+  const [isHabitsExpanded, setIsHabitsExpanded] = useState(false);
+  const [isPrecisionGoalsExpanded, setIsPrecisionGoalsExpanded] = useState(false);
+
   // Simple Mode forms
   const [simpleGoalTitle, setSimpleGoalTitle] = useState('');
   const [simpleGoalDate, setSimpleGoalDate] = useState('2026-08-30');
@@ -63,6 +103,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
   const [simpleNoteCategory, setSimpleNoteCategory] = useState<'Checkup' | 'Symptom'>('Checkup');
 
   const [expandedEventIds, setExpandedEventIds] = useState<Record<string, boolean>>({});
+  const [selectedLogDate, setSelectedLogDate] = useState<string | null>(null);
 
   const toggleEventExpand = (eventId: string) => {
     setExpandedEventIds(prev => ({ ...prev, [eventId]: !prev[eventId] }));
@@ -87,6 +128,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
   React.useEffect(() => {
     if (system) {
       setSliderRating(system.subjectiveRating);
+      setTempDescription(system.description);
     }
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -107,6 +149,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
 
   // Filter lists
   const systemEvents = events.filter((e) => e.systemId === systemId);
+  const displayedEvents = selectedLogDate ? systemEvents.filter(e => e.date === selectedLogDate) : systemEvents;
   const systemHabits = habits.filter((h) => h.systemId === systemId);
   const systemGoals = goals.filter((g) => g.systemId === systemId);
   const systemMetrics = metrics.filter((m) => m.systemId === systemId);
@@ -162,17 +205,6 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
       default:
         return 'bg-rose-500/10 border-rose-500/20 text-rose-400';
     }
-  };
-
-  const getRatingDescriptor = (rating: number) => {
-    return RATING_LABELS[rating - 1] || 'Unknown';
-  };
-
-  const getRatingColorClass = (rating: number) => {
-    if (rating >= 9) return 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5';
-    if (rating >= 7) return 'text-blue-400 border-blue-500/20 bg-blue-500/5';
-    if (rating >= 5) return 'text-amber-400 border-amber-500/20 bg-amber-500/5';
-    return 'text-rose-400 border-rose-500/20 bg-rose-500/5';
   };
 
   // Simple Mode additions
@@ -283,96 +315,172 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
           </div>
         </div>
 
-        {/* Current Score Indicator */}
-        <div className="flex items-center gap-3 bg-slate-900/40 border border-slate-800/80 rounded-2xl py-2 px-4 self-start sm:self-auto">
-          <div className="text-right">
-            <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider block">Bio-Score</span>
-            <span className="text-xl font-mono font-bold text-slate-100">{system.score}</span>
-            <span className="text-[10px] text-slate-550">/100</span>
-          </div>
-          <div className={`w-2 h-8 rounded-full bg-slate-800 relative overflow-hidden`}>
-            <div 
-              className={`absolute bottom-0 left-0 right-0 rounded-full`}
-              style={{
-                height: `${system.score}%`,
-                backgroundColor: themeColors.hex,
-                boxShadow: `0 0 10px ${themeColors.hex}`
-              }}
-            />
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          {/* Three-dots Dropdown Menu Button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsDetailHeaderMenuOpen(!isDetailHeaderMenuOpen)}
+              className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 hover:bg-slate-800 text-slate-455 hover:text-slate-200 transition-colors cursor-pointer"
+              title="More options"
+            >
+              <LucideIcons.MoreHorizontal className="w-5 h-5" />
+            </button>
+
+            {isDetailHeaderMenuOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setIsDetailHeaderMenuOpen(false)} 
+                />
+                <div className="absolute right-0 mt-2 top-full w-52 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl z-20 animate-fade-in space-y-1">
+                  <div className="p-1.5 space-y-1">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest px-2 py-0.5 block mb-1">
+                      Tracking Mode
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        togglePrecisionMode(system.id, false);
+                        setIsDetailHeaderMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
+                        !system.precisionEnabled
+                          ? 'bg-slate-800 text-white'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                      }`}
+                    >
+                      <span>Daily Rating</span>
+                      {!system.precisionEnabled && <LucideIcons.Check className="w-3.5 h-3.5 text-indigo-400" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        togglePrecisionMode(system.id, true);
+                        setIsDetailHeaderMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
+                        system.precisionEnabled
+                          ? 'bg-indigo-650 text-white'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                      }`}
+                    >
+                      <span>Precision Vitals</span>
+                      {system.precisionEnabled && <LucideIcons.Check className="w-3.5 h-3.5 text-white" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Description */}
-      <p className="text-xs text-slate-400 max-w-3xl leading-relaxed mt-1">
-        {system.description}
-      </p>
+      {/* Expandable/Collapsible Description Card and Bio-Score side-by-side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+        {/* Description Card */}
+        <div className="glass-panel rounded-2xl p-4 border border-slate-800/60 flex flex-col justify-between">
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setIsDescriptionOpen(!isDescriptionOpen)}
+              className="w-full flex items-center justify-between text-left text-xs font-semibold text-slate-350 hover:text-slate-100 transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.BookOpen className="w-4 h-4 text-indigo-400" />
+                <span>System Description & Details</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isDescriptionOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-      {/* MODE SELECTOR PANEL */}
-      <div className="glass-panel rounded-2xl p-5 border border-slate-850 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        
-        {/* Simple feeling tracker (1-10 numerical buttons) */}
-        <div className="space-y-1.5 flex-grow">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-            Status Rating (1-10)
-          </label>
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800/80 gap-1 flex-wrap">
-              {Array.from({ length: 10 }).map((_, index) => {
-                const val = index + 1;
-                const isSelected = system.subjectiveRating === val;
-                return (
-                  <button
-                    key={val}
-                    onClick={() => updateSystemRating(system.id, val)}
-                    className={`w-9 h-9 rounded-xl font-mono font-bold text-xs flex items-center justify-center transition-all ${
-                      isSelected 
-                        ? 'bg-indigo-650 border border-indigo-550 text-white scale-105 shadow-md' 
-                        : 'bg-slate-950/20 border border-slate-900/50 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {val}
-                  </button>
-                );
-              })}
+            {isDescriptionOpen && (
+              <div className="pt-3 border-t border-slate-800/40 space-y-3 animate-fade-in text-xs text-slate-405">
+                {!isEditingDescription ? (
+                  <div className="flex items-start justify-between gap-3 bg-slate-900/20 p-3 rounded-xl border border-slate-900/60">
+                    <p className="leading-relaxed text-slate-300">
+                      {system.description || <span className="italic text-slate-600">No custom details specified.</span>}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTempDescription(system.description);
+                        setIsEditingDescription(true);
+                      }}
+                      className="text-slate-500 hover:text-indigo-400 transition-colors p-1 cursor-pointer shrink-0"
+                      title="Customize Description"
+                    >
+                      <LucideIcons.Edit3 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <textarea
+                      value={tempDescription}
+                      onChange={(e) => setTempDescription(e.target.value)}
+                      className="w-full h-20 bg-slate-900 border border-slate-800 text-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:border-indigo-500"
+                      placeholder="Describe this body system's baseline state, parameters, or clinical targets..."
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateSystemDescription(system.id, tempDescription);
+                          setIsEditingDescription(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white font-bold text-[10px] transition-colors cursor-pointer"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingDescription(false)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 font-semibold text-[10px] transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Dedicated Bio-Score Card */}
+        <div className="glass-panel rounded-2xl p-4 border border-slate-800/60 flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-slate-350">
+            <LucideIcons.Activity className="w-4 h-4" style={{ color: themeColors.hex }} />
+            <span>System Bio-Score</span>
+          </div>
+          
+          <div className="flex items-center justify-between gap-4 mt-2">
+            <div className="flex flex-col">
+              <div className="flex items-baseline gap-1">
+                <span className="text-4xl md:text-5xl font-black font-display text-slate-100 tracking-tight">
+                  {system.score}
+                </span>
+                <span className="text-slate-500 text-xs font-semibold font-mono">/100</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-1">
+                Overall Status: <span style={{ color: themeColors.hex }} className="font-bold">{system.score >= 80 ? 'Optimal' : system.score >= 60 ? 'Fair' : 'Critical'}</span>
+              </span>
             </div>
-            <span className={`text-[10px] font-semibold border px-2.5 py-1 rounded-lg ${getRatingColorClass(system.subjectiveRating)}`}>
-              {getRatingDescriptor(system.subjectiveRating)}
-            </span>
+
+            {/* Visual Progress Track */}
+            <div className="flex-1 max-w-[120px] bg-slate-900/60 rounded-xl p-3 border border-slate-800/80 flex items-center justify-center gap-2">
+              <div className="w-full h-3 rounded-full bg-slate-850 relative overflow-hidden">
+                <div 
+                  className="absolute top-0 bottom-0 left-0 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${system.score}%`,
+                    backgroundColor: themeColors.hex,
+                    boxShadow: `0 0 10px ${themeColors.hex}`
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </div>
-
-        {/* Tab switch for Precision tracking */}
-        <div className="space-y-1.5 shrink-0 self-start md:self-auto w-full md:w-auto">
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-            Tracking Mode
-          </label>
-          <div className="flex bg-slate-900/60 p-1 rounded-xl border border-slate-850 w-full md:w-60">
-            <button
-              type="button"
-              onClick={() => togglePrecisionMode(system.id, false)}
-              className={`flex-1 py-1.5 text-center text-xs font-bold rounded-lg transition-all ${
-                !system.precisionEnabled 
-                  ? 'bg-slate-800 border border-slate-700/60 text-white shadow-sm' 
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Daily Rating
-            </button>
-            <button
-              type="button"
-              onClick={() => togglePrecisionMode(system.id, true)}
-              className={`flex-1 py-1.5 text-center text-xs font-bold rounded-lg transition-all ${
-                system.precisionEnabled 
-                  ? 'bg-indigo-650 text-white shadow-md' 
-                  : 'text-slate-500 hover:text-slate-350'
-              }`}
-            >
-              Precision
-            </button>
-          </div>
-        </div>
-
       </div>
 
       {/* CORE Score Trend Chart - Visible in BOTH modes (Google Fit Style) */}
@@ -385,339 +493,409 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
           minYValue={0}
           height={200}
           yLabelSuffix="/10"
+          onDaySelect={(dateStr) => {
+            setSelectedLogDate(dateStr);
+            // Expand the event logs / history cards automatically
+            setIsEventLogsExpanded(true);
+            setIsMedHistoryExpanded(true);
+            
+            // Smoothly slide to the logs card
+            const el = document.getElementById('details-accordion-stack');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}
         />
       </div>
 
       {/* DYNAMIC VIEW CONTENT DEPENDING ON MODE */}
-      {!system.precisionEnabled ? (
+      <div id="details-accordion-stack" className="space-y-4">
+        {!system.precisionEnabled ? (
         
         /* SIMPLE MODE DETAIL MODULES */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-in">
+        <div className="space-y-4 animate-fade-in">
           
-          {/* Left Column: Subjective Timeline logs & logging form */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="glass-panel rounded-2xl p-5 border border-slate-800/60 space-y-4">
-              <h3 className="font-display font-semibold text-sm text-slate-200 border-b border-slate-800 pb-3 flex items-center gap-2">
-                <LucideIcons.FileText className="w-4 h-4 text-slate-400" />
-                Wellness Event Logs
-              </h3>
-
-              {/* Logs Timeline */}
-              {systemEvents.length > 0 ? (
-                <div className="relative pl-4 border-l border-slate-800 space-y-4 max-h-[380px] overflow-y-auto pr-1">
-                  {systemEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e) => {
-                    const ratingVal = e.rating || 0;
-                    const ratingColor = ratingVal >= 8 ? 'text-emerald-400' : ratingVal >= 6 ? 'text-blue-400' : ratingVal >= 4 ? 'text-amber-400' : 'text-rose-400';
-                    const ratingBg = ratingVal >= 8 ? 'bg-emerald-500/8' : ratingVal >= 6 ? 'bg-blue-500/8' : ratingVal >= 4 ? 'bg-amber-500/8' : 'bg-rose-500/8';
-                    const ratingBorder = ratingVal >= 8 ? 'border-emerald-500/20' : ratingVal >= 6 ? 'border-blue-500/20' : ratingVal >= 4 ? 'border-amber-500/20' : 'border-rose-500/20';
-                    const ratingGlow = ratingVal >= 8 ? 'shadow-emerald-500/10' : ratingVal >= 6 ? 'shadow-blue-500/10' : ratingVal >= 4 ? 'shadow-amber-500/10' : 'shadow-rose-500/10';
-                    
-                    return (
-                      <div key={e.id} className="relative group">
-                        <span className={`absolute -left-[21px] top-5 w-2.5 h-2.5 rounded-full bg-slate-950 border-2 ${
-                          e.type === 'Symptom' ? 'border-rose-500' : 'border-indigo-400'
-                        }`} />
-                        
-                        <div className={`flex items-stretch gap-0 ${ratingBg} border ${ratingBorder} rounded-2xl overflow-hidden shadow-sm ${ratingGlow} transition-all hover:shadow-md`}>
-                          {/* HERO RATING - large, bold, dominant */}
-                          <div className={`flex flex-col items-center justify-center px-4 py-3 min-w-[72px] border-r ${ratingBorder}`}>
-                            <span className={`text-2xl font-black font-mono leading-none ${ratingColor}`}>
-                              {ratingVal || '—'}
-                            </span>
-                            <span className="text-[9px] font-bold text-slate-500 mt-0.5">/10</span>
-                          </div>
-                          
-                          {/* Content side */}
-                          <div className="flex-grow py-2.5 px-3 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <h4 className="text-[11px] font-semibold text-slate-300 leading-snug truncate">{e.title}</h4>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[8px] font-mono text-slate-500">{e.date}{e.time && ` @ ${e.time}`}</span>
-                                <button
-                                  onClick={() => deleteEvent(e.id)}
-                                  className="text-slate-700 hover:text-rose-450 opacity-0 group-hover:opacity-100 transition-all p-0.5"
-                                  title="Delete note"
-                                >
-                                  <LucideIcons.Trash className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                            
-                            {/* Inline tags */}
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
-                                e.type === 'Symptom' ? 'bg-rose-500/10 text-rose-400' : 'bg-indigo-500/10 text-indigo-400'
-                              }`}>
-                                {e.type}
-                              </span>
-                              {e.severity && (
-                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
-                                  e.severity === 'Severe' ? 'bg-rose-500/10 text-rose-400' :
-                                  e.severity === 'Moderate' ? 'bg-amber-500/10 text-amber-400' :
-                                  'bg-emerald-500/10 text-emerald-400'
-                                }`}>
-                                  {e.severity}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Details Toggle */}
-                            <button
-                              type="button"
-                              onClick={() => toggleEventExpand(e.id)}
-                              className="text-[9px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-0.5 transition-colors mt-1.5"
-                            >
-                              <span>{expandedEventIds[e.id] ? 'Hide' : 'Details'}</span>
-                              <LucideIcons.ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expandedEventIds[e.id] ? 'rotate-180' : ''}`} />
-                            </button>
-
-                            {/* Collapsible Details */}
-                            {expandedEventIds[e.id] && (
-                              <div className="pt-2 mt-1.5 border-t border-slate-800/40 text-[11px] text-slate-400 animate-fade-in">
-                                <p className="leading-relaxed">{e.description}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-550">No wellness logs entered yet.</p>
-              )}
-
-              {/* Simplified slider-first rating form */}
-              <div className="pt-3 border-t border-slate-800/40 space-y-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Quick Rating</span>
-                
-                {/* Android-style Brightness slider track with emoji */}
-                <div className="relative w-full h-9 bg-slate-900 border border-slate-800 rounded-full overflow-hidden flex items-center shadow-inner group">
-                  {/* Progress fill */}
-                  <div
-                    className="absolute left-0 top-0 bottom-0 transition-all duration-100 ease-out"
-                    style={{
-                      width: `${sliderRating * 10}%`,
-                      background: `linear-gradient(to right, ${themeColors.hex}33, ${themeColors.hex}bb)`,
-                      boxShadow: `0 0 12px ${themeColors.hex}33`
-                    }}
-                  />
-                  
-                  {/* Content display within track */}
-                  <div className="absolute inset-0 flex items-center justify-between px-3.5 pointer-events-none select-none">
-                    <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-350 transition-colors uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="text-sm">
-                        {sliderRating >= 9 ? '😄' : sliderRating >= 7 ? '🙂' : sliderRating >= 5 ? '😐' : sliderRating >= 3 ? '😕' : '😞'}
-                      </span>
-                      <span>Rating Slider</span>
-                    </span>
-                    <span 
-                      className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white transition-colors"
+          {/* Card 1: Quick Rating Entry */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsQuickRatingExpanded(!isQuickRatingExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.PlusCircle className="w-4 h-4 text-indigo-400" />
+                <span>Quick Rating Entry</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isQuickRatingExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {isQuickRatingExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
+                <div className="space-y-3">
+                  {/* Android-style Brightness slider track with emoji */}
+                  <div className="relative w-full h-9 bg-slate-900 border border-slate-800 rounded-full overflow-hidden flex items-center shadow-inner group">
+                    {/* Progress fill */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 transition-all duration-100 ease-out"
                       style={{
-                        backgroundColor: '#0f172a',
-                        borderColor: `${themeColors.hex}44`
+                        width: `${sliderRating * 10}%`,
+                        background: `linear-gradient(to right, ${themeColors.hex}33, ${themeColors.hex}bb)`,
+                        boxShadow: `0 0 12px ${themeColors.hex}33`
                       }}
-                    >
-                      {sliderRating}/10
-                    </span>
+                    />
+                    
+                    {/* Content display within track */}
+                    <div className="absolute inset-0 flex items-center justify-between px-3.5 pointer-events-none select-none">
+                      <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-350 transition-colors uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="text-sm">
+                          {sliderRating >= 9 ? '😄' : sliderRating >= 7 ? '🙂' : sliderRating >= 5 ? '😐' : sliderRating >= 3 ? '😕' : '😞'}
+                        </span>
+                        <span>{RATING_LABELS[sliderRating - 1]}</span>
+                      </span>
+                      <span 
+                        className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white transition-colors"
+                        style={{
+                          backgroundColor: '#0f172a',
+                          borderColor: `${themeColors.hex}44`
+                        }}
+                      >
+                        {sliderRating}/10
+                      </span>
+                    </div>
+
+                    {/* Opaque range input overlay */}
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={sliderRating}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setSliderRating(val);
+                        playSliderSound(val);
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
                   </div>
 
-                  {/* Opaque range input overlay */}
-                  <input
-                    type="range"
-                    min="1"
-                    max="10"
-                    value={sliderRating}
-                    onChange={(e) => setSliderRating(parseInt(e.target.value))}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                </div>
+                  {/* Date & Time Selectors */}
+                  {showCustomDateTime && (
+                    <div className="grid grid-cols-2 gap-3 bg-slate-955/60 p-3 rounded-2xl border border-slate-850 animate-fade-in">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Date</label>
+                        <input
+                          type="date"
+                          value={customLogDate}
+                          onChange={(e) => setCustomLogDate(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Time (HH:MM)</label>
+                        <input
+                          type="time"
+                          value={customLogTime}
+                          onChange={(e) => setCustomLogTime(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  )}
 
-                {/* Date & Time Selectors */}
-                {showCustomDateTime && (
-                  <div className="grid grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-850 animate-fade-in">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Date</label>
+                  {/* Submissions & Time triggers */}
+                  <div className="flex items-center justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomDateTime(!showCustomDateTime)}
+                      className="text-[10px] text-slate-550 hover:text-slate-350 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <LucideIcons.Clock className="w-3.5 h-3.5" />
+                      <span>{showCustomDateTime ? "Use current time" : "Log for past date/time"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleAddSimpleNote();
+                        setIsQuickRatingExpanded(false); // contract after adding
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-650 hover:bg-indigo-550 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
+                    >
+                      <span>Add</span>
+                    </button>
+                  </div>
+
+                  {/* Optional details toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setShowFormDetails(!showFormDetails)}
+                    className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <LucideIcons.ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showFormDetails ? 'rotate-180' : ''}`} />
+                    <span>{showFormDetails ? 'Hide details' : 'Add details (optional)'}</span>
+                  </button>
+
+                  {/* Collapsible detail fields */}
+                  {showFormDetails && (
+                    <div className="space-y-2 animate-fade-in pt-1">
                       <input
-                        type="date"
-                        value={customLogDate}
-                        onChange={(e) => setCustomLogDate(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                        type="text"
+                        placeholder="Brief headline (e.g. Felt great today)"
+                        value={simpleNoteTitle}
+                        onChange={(e) => setSimpleNoteTitle(e.target.value)}
+                        className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
                       />
+                      <div className="flex gap-2">
+                        <select
+                          value={simpleNoteCategory}
+                          onChange={(e) => setSimpleNoteCategory(e.target.value as 'Checkup' | 'Symptom')}
+                          className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-400"
+                        >
+                          <option value="Checkup">General Wellness</option>
+                          <option value="Symptom">Symptom Alert</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Notes or additional details..."
+                          value={simpleNoteText}
+                          onChange={(e) => setSimpleNoteText(e.target.value)}
+                          className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Time (HH:MM)</label>
-                      <input
-                        type="time"
-                        value={customLogTime}
-                        onChange={(e) => setCustomLogTime(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
-                      />
-                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Card 2: Wellness Event Logs */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsEventLogsExpanded(!isEventLogsExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.FileText className="w-4 h-4 text-slate-400" />
+                <span>Wellness Event Logs</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isEventLogsExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isEventLogsExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
+                {selectedLogDate && (
+                  <div className="flex items-center justify-between bg-indigo-950/20 border border-indigo-900/30 p-2.5 rounded-xl mb-3 text-xs">
+                    <span className="text-slate-350">
+                      Showing logs for date: <strong className="text-slate-100">{selectedLogDate}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLogDate(null)}
+                      className="text-[10px] text-rose-400 hover:text-rose-350 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Clear Date Filter</span>
+                      <LucideIcons.X className="w-2.5 h-2.5" />
+                    </button>
                   </div>
                 )}
+                {displayedEvents.length > 0 ? (
+                  <div className="relative pl-4 border-l border-slate-800 space-y-4 max-h-[380px] overflow-y-auto pr-1">
+                    {displayedEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e) => {
+                      const ratingVal = e.rating || 0;
+                      const ratingColor = ratingVal >= 8 ? 'text-emerald-400' : ratingVal >= 6 ? 'text-blue-400' : ratingVal >= 4 ? 'text-amber-400' : 'text-rose-400';
+                      const ratingBg = ratingVal >= 8 ? 'bg-emerald-500/8' : ratingVal >= 6 ? 'bg-blue-500/8' : ratingVal >= 4 ? 'bg-amber-500/8' : 'bg-rose-500/8';
+                      const ratingBorder = ratingVal >= 8 ? 'border-emerald-500/20' : ratingVal >= 6 ? 'border-blue-500/20' : ratingVal >= 4 ? 'border-amber-500/20' : 'border-rose-500/20';
+                      const ratingGlow = ratingVal >= 8 ? 'shadow-emerald-500/10' : ratingVal >= 6 ? 'shadow-blue-500/10' : ratingVal >= 4 ? 'shadow-amber-500/10' : 'shadow-rose-500/10';
+                      
+                      return (
+                        <div key={e.id} className="relative group">
+                          <span className={`absolute -left-[21px] top-5 w-2.5 h-2.5 rounded-full bg-slate-950 border-2 ${
+                            e.type === 'Symptom' ? 'border-rose-500' : 'border-indigo-400'
+                          }`} />
+                          
+                          <div className={`flex items-stretch gap-0 ${ratingBg} border ${ratingBorder} rounded-2xl overflow-hidden shadow-sm ${ratingGlow} transition-all hover:shadow-md`}>
+                            {/* HERO RATING - large, bold, dominant */}
+                            <div className={`flex flex-col items-center justify-center px-4 py-3 min-w-[72px] border-r ${ratingBorder}`}>
+                              <span className={`text-2xl font-black font-mono leading-none ${ratingColor}`}>
+                                {ratingVal || '—'}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-500 mt-0.5">/10</span>
+                            </div>
+                            
+                            {/* Content side */}
+                            <div className="flex-grow py-2.5 px-3 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <h4 className="text-[11px] font-semibold text-slate-300 leading-snug truncate">{e.title}</h4>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-[8px] font-mono text-slate-500">{e.date}{e.time && ` @ ${e.time}`}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteEvent(e.id)}
+                                    className="text-slate-700 hover:text-rose-450 opacity-0 group-hover:opacity-100 transition-all p-0.5 cursor-pointer"
+                                    title="Delete note"
+                                  >
+                                    <LucideIcons.Trash className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              {/* Inline tags */}
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                                  e.type === 'Symptom' ? 'bg-rose-500/10 text-rose-400' : 'bg-indigo-500/10 text-indigo-400'
+                                }`}>
+                                  {e.type}
+                                </span>
+                                {e.severity && (
+                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
+                                    e.severity === 'Severe' ? 'bg-rose-500/10 text-rose-400' :
+                                    e.severity === 'Moderate' ? 'bg-amber-500/10 text-amber-400' :
+                                    'bg-emerald-500/10 text-emerald-400'
+                                  }`}>
+                                    {e.severity}
+                                  </span>
+                                )}
+                              </div>
 
-                {/* Submissions & Time triggers */}
-                <div className="flex items-center justify-between gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomDateTime(!showCustomDateTime)}
-                    className="text-[10px] text-slate-500 hover:text-slate-350 transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <LucideIcons.Clock className="w-3.5 h-3.5" />
-                    <span>{showCustomDateTime ? "Use current time" : "Log for past date/time"}</span>
-                  </button>
+                              {/* Details Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => toggleEventExpand(e.id)}
+                                className="text-[9px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-0.5 transition-colors mt-1.5 cursor-pointer"
+                              >
+                                <span>{expandedEventIds[e.id] ? 'Hide' : 'Details'}</span>
+                                <LucideIcons.ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expandedEventIds[e.id] ? 'rotate-180' : ''}`} />
+                              </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleAddSimpleNote()}
-                    className="px-4 py-2 rounded-xl bg-indigo-650 hover:bg-indigo-550 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
-                  >
-                    <span>Add</span>
-                  </button>
-                </div>
+                              {/* Collapsible Details */}
+                              {expandedEventIds[e.id] && (
+                                <div className="pt-2 mt-1.5 border-t border-slate-800/40 text-[11px] text-slate-400 animate-fade-in">
+                                  <p className="leading-relaxed">{e.description}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-550">No wellness logs entered yet.</p>
+                )}
+              </div>
+            )}
+          </div>
 
-                {/* Optional details toggle */}
-                <button
-                  type="button"
-                  onClick={() => setShowFormDetails(!showFormDetails)}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors"
-                >
-                  <LucideIcons.ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showFormDetails ? 'rotate-180' : ''}`} />
-                  <span>{showFormDetails ? 'Hide details' : 'Add details (optional)'}</span>
-                </button>
+          {/* Card 3: Target Wellness Goals */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsGoalsExpanded(!isGoalsExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.Target className="w-4 h-4 text-slate-400" />
+                <span>Target Wellness Goals</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isGoalsExpanded ? 'rotate-180' : ''}`} />
+            </button>
 
-                {/* Collapsible detail fields */}
-                {showFormDetails && (
-                  <div className="space-y-2 animate-fade-in">
+            {isGoalsExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
+                {systemGoals.length > 0 ? (
+                  <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                    {systemGoals.map((goal) => (
+                      <div key={goal.id} className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl flex items-start justify-between gap-3 group">
+                        <div className="space-y-1 flex-grow">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextStatus = 
+                                  goal.status === 'In Progress' ? 'Achieved' : 
+                                  goal.status === 'Achieved' ? 'Stalled' : 'In Progress';
+                                updateGoal({ ...goal, status: nextStatus });
+                              }}
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                                goal.status === 'Achieved' 
+                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                                  : goal.status === 'Stalled' 
+                                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' 
+                                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                              }`}
+                            >
+                              {goal.status}
+                            </button>
+                            <span className="text-[9px] font-mono text-slate-500">Target: {goal.targetDate}</span>
+                          </div>
+                          <span className={`text-xs font-semibold text-slate-200 block ${goal.status === 'Achieved' ? 'line-through text-slate-500' : ''}`}>
+                            {goal.title}
+                          </span>
+                          {goal.metricTarget && (
+                            <span className="inline-block text-[9px] text-indigo-300 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
+                              Target Rating: {goal.metricTarget.replace('Rating: ', '')}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteGoal(goal.id)}
+                          className="text-slate-600 hover:text-rose-455 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
+                          title="Remove goal"
+                        >
+                          <LucideIcons.Trash className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No wellness goals set yet.</p>
+                )}
+
+                {/* Goal with target ratings form */}
+                <form onSubmit={handleAddSimpleGoal} className="space-y-2 pt-2 border-t border-slate-800/40">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Target Rating Goal</span>
+                  <input
+                    type="text"
+                    placeholder="Goal description (e.g. Feel fully rested)"
+                    value={simpleGoalTitle}
+                    onChange={(e) => setSimpleGoalTitle(e.target.value)}
+                    className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                    required
+                  />
+                  <div className="grid grid-cols-2 gap-2">
                     <input
-                      type="text"
-                      placeholder="Brief headline (e.g. Felt great today)"
-                      value={simpleNoteTitle}
-                      onChange={(e) => setSimpleNoteTitle(e.target.value)}
-                      className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                      type="date"
+                      value={simpleGoalDate}
+                      onChange={(e) => setSimpleGoalDate(e.target.value)}
+                      className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-450"
+                      required
                     />
                     <div className="flex gap-2">
                       <select
-                        value={simpleNoteCategory}
-                        onChange={(e: any) => setSimpleNoteCategory(e.target.value)}
-                        className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-400"
+                        value={simpleGoalRating}
+                        onChange={(e) => setSimpleGoalRating(e.target.value)}
+                        className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-400"
                       >
-                        <option value="Checkup">General Wellness</option>
-                        <option value="Symptom">Symptom Alert</option>
+                        {Array.from({ length: 10 }).map((_, idx) => (
+                          <option key={idx + 1} value={idx + 1}>
+                            Target: {idx + 1}/10
+                          </option>
+                        ))}
                       </select>
-                      <input
-                        type="text"
-                        placeholder="Notes or additional details..."
-                        value={simpleNoteText}
-                        onChange={(e) => setSimpleNoteText(e.target.value)}
-                        className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Simplified Goals with targeted ratings */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="glass-panel rounded-2xl p-5 border border-slate-800/60 space-y-4">
-              <h3 className="font-display font-semibold text-sm text-slate-200 border-b border-slate-800 pb-3 flex items-center gap-2">
-                <LucideIcons.Target className="w-4 h-4 text-slate-400" />
-                Target Wellness Goals
-              </h3>
-
-              {/* Goals list with rating target */}
-              {systemGoals.length > 0 ? (
-                <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
-                  {systemGoals.map((goal) => (
-                    <div key={goal.id} className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl flex items-start justify-between gap-3 group">
-                      <div className="space-y-1 flex-grow">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              const nextStatus = 
-                                goal.status === 'In Progress' ? 'Achieved' : 
-                                goal.status === 'Achieved' ? 'Stalled' : 'In Progress';
-                              updateGoal({ ...goal, status: nextStatus });
-                            }}
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
-                              goal.status === 'Achieved' 
-                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                                : goal.status === 'Stalled' 
-                                ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' 
-                                : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
-                            }`}
-                          >
-                            {goal.status}
-                          </button>
-                          <span className="text-[9px] font-mono text-slate-500">Target: {goal.targetDate}</span>
-                        </div>
-                        <span className={`text-xs font-semibold text-slate-200 block ${goal.status === 'Achieved' ? 'line-through text-slate-500' : ''}`}>
-                          {goal.title}
-                        </span>
-                        {goal.metricTarget && (
-                          <span className="inline-block text-[9px] text-indigo-300 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
-                            Target Rating: {goal.metricTarget.replace('Rating: ', '')}
-                          </span>
-                        )}
-                      </div>
                       <button
-                        onClick={() => deleteGoal(goal.id)}
-                        className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all p-1"
-                        title="Remove goal"
+                        type="submit"
+                        className="px-3 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white transition-colors cursor-pointer"
                       >
-                        <LucideIcons.Trash className="w-3.5 h-3.5" />
+                        <LucideIcons.Plus className="w-4 h-4" />
                       </button>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500">No wellness goals set yet.</p>
-              )}
-
-              {/* Goal with target ratings form */}
-              <form onSubmit={handleAddSimpleGoal} className="space-y-2 pt-2 border-t border-slate-800/40">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Set Target Rating Goal</span>
-                <input
-                  type="text"
-                  placeholder="Goal description (e.g. Feel fully rested)"
-                  value={simpleGoalTitle}
-                  onChange={(e) => setSimpleGoalTitle(e.target.value)}
-                  className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                  required
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    value={simpleGoalDate}
-                    onChange={(e) => setSimpleGoalDate(e.target.value)}
-                    className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-450"
-                    required
-                  />
-                  <div className="flex gap-2">
-                    <select
-                      value={simpleGoalRating}
-                      onChange={(e) => setSimpleGoalRating(e.target.value)}
-                      className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-400"
-                    >
-                      {Array.from({ length: 10 }).map((_, idx) => (
-                        <option key={idx + 1} value={idx + 1}>
-                          Target: {idx + 1}/10
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="submit"
-                      className="px-3 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white transition-colors"
-                    >
-                      <LucideIcons.Plus className="w-4 h-4" />
-                    </button>
                   </div>
-                </div>
-              </form>
-            </div>
+                </form>
+              </div>
+            )}
           </div>
 
         </div>
@@ -725,7 +903,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
       ) : (
 
         /* ADVANCED / PRECISION MODE DETAIL MODULES */
-        <div className="space-y-6 animate-fade-in">
+        <div className="space-y-4 animate-fade-in">
           
           {/* Detailed Calculations Instruction Box at the top */}
           <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed text-indigo-300">
@@ -738,19 +916,22 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Side Modules */}
-            <div className="lg:col-span-7 space-y-6">
-              
-              {/* Vitals & Biometrics Logs */}
-              <div className="glass-panel rounded-2xl p-5 border border-slate-800/60 space-y-4">
-                <h3 className="font-display font-semibold text-sm text-slate-200 flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span className="flex items-center gap-2">
-                    <LucideIcons.HeartPulse className="w-4 h-4 text-slate-400" />
-                    Vitals & Biometrics Logs
-                  </span>
-                </h3>
+          {/* Card 1: Vitals & Biometrics Logs */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsVitalsExpanded(!isVitalsExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.HeartPulse className="w-4 h-4 text-slate-400" />
+                <span>Vitals & Biometrics Logs</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isVitalsExpanded ? 'rotate-180' : ''}`} />
+            </button>
 
+            {isVitalsExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
                 {/* List log */}
                 {systemMetrics.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-40 overflow-y-auto pr-1">
@@ -762,11 +943,12 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-sm font-bold text-slate-100">
-                            {log.value} <span className="text-[10px] text-slate-400 font-normal">{log.unit}</span>
+                            {log.value} <span className="text-[10px] text-slate-405 font-normal">{log.unit}</span>
                           </span>
                           <button 
+                            type="button"
                             onClick={() => deleteMetricLog(log.id)}
-                            className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all p-1"
+                            className="text-slate-600 hover:text-rose-455 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
                             title="Delete log"
                           >
                             <LucideIcons.Trash className="w-3.5 h-3.5" />
@@ -809,29 +991,55 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                     />
                     <button
                       type="submit"
-                      className="flex-grow flex items-center justify-center p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white text-xs transition-colors"
+                      className="flex-grow flex items-center justify-center p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white text-xs transition-colors cursor-pointer"
                     >
                       <LucideIcons.Plus className="w-4 h-4" />
                     </button>
                   </div>
                 </form>
               </div>
+            )}
+          </div>
 
-              {/* System Medical History timeline */}
-              <div className="glass-panel rounded-2xl p-5 border border-slate-800/60 space-y-4">
-                <h3 className="font-display font-semibold text-sm text-slate-200 mb-2 flex items-center gap-2">
-                  <LucideIcons.FileText className="w-4 h-4 text-slate-400" />
-                  Medical Events & History
-                </h3>
-                
-                {systemEvents.length > 0 ? (
+          {/* Card 2: Medical Events & History */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsMedHistoryExpanded(!isMedHistoryExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.FileText className="w-4 h-4 text-slate-400" />
+                <span>Medical Events & History</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isMedHistoryExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isMedHistoryExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
+                {selectedLogDate && (
+                  <div className="flex items-center justify-between bg-indigo-950/20 border border-indigo-900/30 p-2.5 rounded-xl mb-3 text-xs">
+                    <span className="text-slate-350">
+                      Showing logs for date: <strong className="text-slate-100">{selectedLogDate}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLogDate(null)}
+                      className="text-[10px] text-rose-400 hover:text-rose-350 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Clear Date Filter</span>
+                      <LucideIcons.X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                )}
+                {displayedEvents.length > 0 ? (
                   <div className="relative pl-4 border-l border-slate-800 space-y-5 max-h-[300px] overflow-y-auto pr-1">
-                    {systemEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e) => (
+                    {displayedEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e) => (
                       <div key={e.id} className="relative group">
                         <span className={`absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-slate-950 border-2 ${
                           e.type === 'Symptom' ? 'border-rose-500' :
                           e.type === 'Diagnosis' ? 'border-amber-500' :
-                          e.type === 'Surgery' ? 'border-violet-500' : 'border-indigo-400'
+                          e.type === 'Surgery' ? 'border-violet-500' : 'border-indigo-405'
                         }`} />
                         
                         <div className="flex justify-between items-start gap-2">
@@ -855,8 +1063,9 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                             <p className="text-xs text-slate-455 mt-1 leading-relaxed">{e.description}</p>
                           </div>
                           <button
+                            type="button"
                             onClick={() => deleteEvent(e.id)}
-                            className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1"
+                            className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
                             title="Delete event"
                           >
                             <LucideIcons.Trash className="w-3.5 h-3.5" />
@@ -866,23 +1075,28 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500">No medical events logged for this system.</p>
+                  <p className="text-xs text-slate-550">No medical events logged for this system.</p>
                 )}
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Right Side Modules (Habits and Goals) */}
-            <div className="lg:col-span-5 space-y-6">
-              {/* Protective Habits */}
-              <div className="glass-panel rounded-2xl p-5 border border-slate-800/60 space-y-4">
-                <h3 className="font-display font-semibold text-sm text-slate-200 flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span className="flex items-center gap-2">
-                    <LucideIcons.Activity className="w-4 h-4 text-slate-400" />
-                    Protective Habits / Protocols
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-normal">Impacts Bio-Score (40%)</span>
-                </h3>
+          {/* Card 3: Protective Habits / Protocols */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsHabitsExpanded(!isHabitsExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.Activity className="w-4 h-4 text-slate-400" />
+                <span>Protective Habits / Protocols</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isHabitsExpanded ? 'rotate-180' : ''}`} />
+            </button>
 
+            {isHabitsExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
                 {/* List */}
                 {systemHabits.length > 0 ? (
                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
@@ -898,8 +1112,9 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                         <div className="flex justify-between items-center gap-2">
                           <div className="flex items-center gap-2">
                             <button
+                              type="button"
                               onClick={() => toggleHabitActive(habit.id)}
-                              className={`p-1 rounded-md transition-colors ${
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
                                 habit.isActive 
                                   ? 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20' 
                                   : 'text-slate-650 bg-slate-900 hover:bg-slate-850'
@@ -923,8 +1138,9 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                           </div>
 
                           <button
+                            type="button"
                             onClick={() => deleteHabit(habit.id)}
-                            className="text-slate-600 hover:text-rose-400 transition-colors p-1"
+                            className="text-slate-600 hover:text-rose-455 transition-colors p-1 cursor-pointer"
                             title="Remove habit"
                           >
                             <LucideIcons.X className="w-3.5 h-3.5" />
@@ -940,7 +1156,11 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                               min="0"
                               max="100"
                               value={habit.adherence}
-                              onChange={(e) => updateHabitAdherence(habit.id, parseInt(e.target.value))}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value);
+                                updateHabitAdherence(habit.id, val);
+                                playSliderSound(Math.round(val / 10));
+                              }}
                               className="flex-grow accent-indigo-500 h-1 rounded-lg cursor-pointer bg-slate-800"
                             />
                             <span className="text-xs font-mono font-bold text-slate-300 w-10 text-right">
@@ -952,7 +1172,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500">No protective habits defined. Add one below!</p>
+                  <p className="text-xs text-slate-550">No protective habits defined. Add one below!</p>
                 )}
 
                 {/* Quick add Habit */}
@@ -968,7 +1188,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                   <select
                     value={newHabitFreq}
                     onChange={(e: any) => setNewHabitFreq(e.target.value)}
-                    className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-450"
+                    className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-455"
                   >
                     <option value="Daily">Daily</option>
                     <option value="Weekly">Weekly</option>
@@ -976,22 +1196,32 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                   </select>
                   <button
                     type="submit"
-                    className="p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white transition-colors"
+                    className="p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white transition-colors cursor-pointer"
                     title="Add habit"
                   >
                     <LucideIcons.Plus className="w-4 h-4" />
                   </button>
                 </form>
               </div>
+            )}
+          </div>
 
-              {/* Health Goals */}
-              <div className="glass-panel rounded-2xl p-5 border border-slate-800/60 space-y-4">
-                <h3 className="font-display font-semibold text-sm text-slate-200 border-b border-slate-800 pb-3 flex items-center gap-2">
-                  <LucideIcons.Target className="w-4 h-4 text-slate-400" />
-                  Health Goals
-                </h3>
+          {/* Card 4: Health Goals */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsPrecisionGoalsExpanded(!isPrecisionGoalsExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.Target className="w-4 h-4 text-slate-400" />
+                <span>Health Goals</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isPrecisionGoalsExpanded ? 'rotate-180' : ''}`} />
+            </button>
 
-                {/* List */}
+            {isPrecisionGoalsExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
                 {systemGoals.length > 0 ? (
                   <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
                     {systemGoals.map((goal) => (
@@ -999,13 +1229,14 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                         <div className="space-y-1 flex-grow">
                           <div className="flex items-center gap-2">
                             <button
+                              type="button"
                               onClick={() => {
                                 const nextStatus = 
                                   goal.status === 'In Progress' ? 'Achieved' : 
                                   goal.status === 'Achieved' ? 'Stalled' : 'In Progress';
                                 updateGoal({ ...goal, status: nextStatus });
                               }}
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors ${
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
                                 goal.status === 'Achieved' 
                                   ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
                                   : goal.status === 'Stalled' 
@@ -1027,8 +1258,9 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                           )}
                         </div>
                         <button
+                          type="button"
                           onClick={() => deleteGoal(goal.id)}
-                          className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all p-1"
+                          className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
                           title="Remove goal"
                         >
                           <LucideIcons.Trash className="w-3.5 h-3.5" />
@@ -1037,7 +1269,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500">No goals set yet.</p>
+                  <p className="text-xs text-slate-550">No goals set yet.</p>
                 )}
 
                 {/* Quick add Goal */}
@@ -1068,7 +1300,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                       />
                       <button
                         type="submit"
-                        className="px-3 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white transition-colors"
+                        className="px-3 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white transition-colors cursor-pointer"
                       >
                         <LucideIcons.Plus className="w-4 h-4" />
                       </button>
@@ -1076,13 +1308,12 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                   </div>
                 </form>
               </div>
-            </div>
+            )}
           </div>
 
         </div>
-
       )}
-
+      </div>
     </div>
   );
 };
