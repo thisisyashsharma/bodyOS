@@ -8,19 +8,6 @@ interface SystemDetailProps {
   onBack: () => void;
 }
 
-const RATING_LABELS = [
-  'Severe Issue',      // 1
-  'Critical Alert',     // 2
-  'Poor Health',        // 3
-  'Weak Condition',     // 4
-  'Suboptimal Status',  // 5
-  'Fair State',         // 6
-  'Stable Health',      // 7
-  'Good Condition',     // 8
-  'Optimal Health',     // 9
-  'Excellent State'     // 10
-];
-
 const playSliderSound = (value: number) => {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -155,14 +142,24 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
   const systemMetrics = metrics.filter((m) => m.systemId === systemId);
 
   // Build chart data from wellness event ratings (real-time synced)
-  // For each date, average all event ratings for this system
+  // Maps both daily totals and hourly timestamp keys so 24-hour Day matrix displays exact hour ratings!
   const systemScoreHistory = useMemo(() => {
     const dateMap = new Map<string, number[]>();
     systemEvents.forEach(ev => {
       if (ev.rating) {
-        const existing = dateMap.get(ev.date) || [];
-        existing.push(ev.rating);
-        dateMap.set(ev.date, existing);
+        // 1. Daily summary key (YYYY-MM-DD)
+        const existingDaily = dateMap.get(ev.date) || [];
+        existingDaily.push(ev.rating);
+        dateMap.set(ev.date, existingDaily);
+
+        // 2. Hourly timestamp key (YYYY-MM-DDTHH)
+        if (ev.time) {
+          const hourStr = ev.time.split(':')[0].padStart(2, '0');
+          const hourlyKey = `${ev.date}T${hourStr}`;
+          const existingHourly = dateMap.get(hourlyKey) || [];
+          existingHourly.push(ev.rating);
+          dateMap.set(hourlyKey, existingHourly);
+        }
       }
     });
     return Array.from(dateMap.entries())
@@ -292,36 +289,36 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     <div className="space-y-6 animate-fade-in text-slate-200">
       
       {/* Detail Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-5">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <button
             onClick={onBack}
-            className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+            className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors shrink-0"
           >
             <LucideIcons.ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-3">
-            <div className={`p-3 rounded-2xl ${themeColors.bg} border ${themeColors.border} ${themeColors.text}`}>
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className={`p-2 sm:p-3 rounded-2xl ${themeColors.bg} border ${themeColors.border} ${themeColors.text} shrink-0`}>
               {getIcon(system.iconName)}
             </div>
-            <div>
-              <h1 className="font-display font-bold text-xl md:text-2xl text-slate-100 m-0 leading-tight">
+            <div className="min-w-0">
+              <h1 className="font-display font-bold text-lg sm:text-2xl text-slate-100 m-0 leading-tight truncate">
                 {system.name} System
               </h1>
-              <span className={`inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getStatusStyles(system.status)}`}>
+              <span className={`inline-block mt-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getStatusStyles(system.status)}`}>
                 {system.status}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        <div className="flex items-center gap-3 shrink-0 relative z-30">
           {/* Three-dots Dropdown Menu Button */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setIsDetailHeaderMenuOpen(!isDetailHeaderMenuOpen)}
-              className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 hover:bg-slate-800 text-slate-455 hover:text-slate-200 transition-colors cursor-pointer"
+              className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer shrink-0"
               title="More options"
             >
               <LucideIcons.MoreHorizontal className="w-5 h-5" />
@@ -330,10 +327,10 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
             {isDetailHeaderMenuOpen && (
               <>
                 <div 
-                  className="fixed inset-0 z-10" 
+                  className="fixed inset-0 z-40" 
                   onClick={() => setIsDetailHeaderMenuOpen(false)} 
                 />
-                <div className="absolute right-0 mt-2 top-full w-52 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl z-20 animate-fade-in space-y-1">
+                <div className="absolute right-0 mt-2 top-full w-48 sm:w-52 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl z-50 animate-fade-in space-y-1">
                   <div className="p-1.5 space-y-1">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest px-2 py-0.5 block mb-1">
                       Tracking Mode
@@ -514,9 +511,10 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
         
         /* SIMPLE MODE DETAIL MODULES */
         <div className="space-y-4 animate-fade-in">
-          
-          {/* Card 1: Quick Rating Entry */}
-          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+          {/* Side-by-Side Grid on Desktop Mode */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+            {/* Card 1: Quick Rating Entry */}
+            <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
             <button
               type="button"
               onClick={() => setIsQuickRatingExpanded(!isQuickRatingExpanded)}
@@ -550,7 +548,6 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                         <span className="text-sm">
                           {sliderRating >= 9 ? '😄' : sliderRating >= 7 ? '🙂' : sliderRating >= 5 ? '😐' : sliderRating >= 3 ? '😕' : '😞'}
                         </span>
-                        <span>{RATING_LABELS[sliderRating - 1]}</span>
                       </span>
                       <span 
                         className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white transition-colors"
@@ -786,6 +783,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                 )}
               </div>
             )}
+          </div>
           </div>
 
           {/* Card 3: Target Wellness Goals */}

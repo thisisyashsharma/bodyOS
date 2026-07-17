@@ -3,23 +3,13 @@ import * as LucideIcons from 'lucide-react';
 import { useDashboard } from '../context/DashboardContext';
 import { InteractiveBodyMap } from '../components/InteractiveBodyMap';
 import { EventModal } from '../components/EventModal';
+import { QuickBodyScanModal } from '../components/QuickBodyScanModal';
 
 interface DashboardProps {
   onNavigateToSystem: (systemId: string) => void;
 }
 
-const RATING_LABELS = [
-  'Severe Issue',      // 1
-  'Critical Alert',     // 2
-  'Poor Health',        // 3
-  'Weak Condition',     // 4
-  'Suboptimal Status',  // 5
-  'Fair State',         // 6
-  'Stable Health',      // 7
-  'Good Condition',     // 8
-  'Optimal Health',     // 9
-  'Excellent State'     // 10
-];
+
 const playSliderSound = (value: number) => {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -73,6 +63,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isQuickScanOpen, setIsQuickScanOpen] = useState(false);
+  const [quickScanToast, setQuickScanToast] = useState(false);
   
   // State to manage toggle of top-right header menu options
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
@@ -128,9 +120,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
     setSelectedSystemId(systemId);
   };
 
-  const getRatingDescriptor = (rating: number) => {
-    return RATING_LABELS[rating - 1] || 'Unknown';
-  };
+
 
   // Color mapping by system ID
   const systemColors: Record<string, { text: string; bg: string; border: string; hex: string }> = {
@@ -172,21 +162,73 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
     }
   };
 
+  const handleSaveQuickScan = (ratingsMap: Record<string, number>) => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    Object.entries(ratingsMap).forEach(([sysId, ratingVal]) => {
+      const sys = systems.find((s) => s.id === sysId);
+      if (sys && !sys.isTracking) {
+        startTrackingSystem(sysId);
+      }
+      logSystemRating(sysId, ratingVal, todayStr, timeStr);
+    });
+
+    setIsQuickScanOpen(false);
+    setQuickScanToast(true);
+    setTimeout(() => setQuickScanToast(false), 4000);
+  };
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const hasTrackedToday = events.some(e => (e.date === todayStr || e.date === '2026-07-17') && e.rating !== undefined);
+
   return (
     <div className="space-y-6 animate-fade-in text-slate-200">
       
+      {/* Toast Notification for Quick Scan Success */}
+      {quickScanToast && (
+        <div className="fixed top-5 right-5 z-50 bg-slate-900 border border-emerald-500/50 text-emerald-300 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-fade-in">
+          <LucideIcons.CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          <div className="text-xs font-semibold">
+            <span className="block font-bold text-white text-sm">Full Body Audit Complete! ✨</span>
+            All active systems synchronized for current date & time.
+          </div>
+        </div>
+      )}
+
       {/* Top Banner */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="font-display font-bold text-2xl md:text-3xl text-slate-100 m-0">
+          <h1 className="font-display font-bold text-xl sm:text-3xl text-slate-100 m-0">
             Overview Dashboard
           </h1>
         </div>
 
-        <div className="relative">
+        <div className="flex items-center gap-2 relative z-30 shrink-0">
+          {/* Primary Quick Body Scan Button (Top Right Only) */}
+          <button
+            onClick={() => setIsQuickScanOpen(true)}
+            className={`relative overflow-hidden px-4 py-2 rounded-2xl font-bold text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+              !hasTrackedToday
+                ? 'bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500 hover:from-indigo-400 hover:to-cyan-400 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30'
+                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-850 font-medium'
+            }`}
+          >
+            {/* Tilted shimmer moving left to right when untracked */}
+            {!hasTrackedToday && (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl z-0">
+                <div className="w-1/2 h-full bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer-sweep" />
+              </div>
+            )}
+
+            <LucideIcons.Zap className={`w-4 h-4 relative z-10 ${!hasTrackedToday ? 'fill-white' : 'text-slate-400'}`} />
+            <span className="relative z-10">⚡ Quick Body Scan (10s)</span>
+          </button>
+
           <button
             onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
-            className="flex items-center justify-center p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 hover:text-white transition-all text-slate-400 cursor-pointer"
+            className="flex items-center justify-center p-2 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-850 hover:text-white transition-all text-slate-400 cursor-pointer shrink-0"
             title="More Options"
           >
             <LucideIcons.MoreHorizontal className="w-5 h-5" />
@@ -374,7 +416,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                             <span className="text-sm">
                               {dashRating >= 9 ? '😄' : dashRating >= 7 ? '🙂' : dashRating >= 5 ? '😐' : dashRating >= 3 ? '😕' : '😞'}
                             </span>
-                            <span>{getRatingDescriptor(dashRating)}</span>
                           </span>
                           <span 
                             className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white transition-colors"
@@ -736,6 +777,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
         isOpen={isLogOpen}
         onClose={() => setIsLogOpen(false)}
         defaultSystemId={selectedSystemId}
+      />
+
+      <QuickBodyScanModal
+        isOpen={isQuickScanOpen}
+        onClose={() => setIsQuickScanOpen(false)}
+        systems={systems}
+        onSaveAll={handleSaveQuickScan}
       />
     </div>
   );
