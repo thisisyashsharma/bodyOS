@@ -28,7 +28,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     habits,
     goals,
     metrics,
-
+    logSystemRating,
     updateSystemRating,
     togglePrecisionMode,
     addEvent,
@@ -47,6 +47,12 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
   // Slider-first form state
   const [showFormDetails, setShowFormDetails] = useState(false);
   const [sliderRating, setSliderRating] = useState(8);
+  
+  // Custom Time and Date log states
+  const [customLogDate, setCustomLogDate] = useState('2026-07-17');
+  const [customLogTime, setCustomLogTime] = useState('12:00');
+  const [showCustomDateTime, setShowCustomDateTime] = useState(false);
+
   // Simple Mode forms
   const [simpleGoalTitle, setSimpleGoalTitle] = useState('');
   const [simpleGoalDate, setSimpleGoalDate] = useState('2026-08-30');
@@ -76,6 +82,18 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
 
   // Find active system
   const system = systems.find((s) => s.id === systemId);
+
+  // Sync state values on active system change
+  React.useEffect(() => {
+    if (system) {
+      setSliderRating(system.subjectiveRating);
+    }
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    setCustomLogTime(timeStr);
+    setCustomLogDate('2026-07-17'); // seed date anchor
+    setShowCustomDateTime(false);
+  }, [systemId, system]);
   if (!system) {
     return (
       <div className="text-center p-8 space-y-4">
@@ -173,18 +191,26 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
 
   const handleAddSimpleNote = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    
+    // Log rating to systems & history trends
+    logSystemRating(systemId, sliderRating, customLogDate, customLogTime);
+    
+    // Log event to timeline
     addEvent({
       systemId,
-      date: new Date().toISOString().split('T')[0],
+      date: customLogDate,
+      time: customLogTime,
       type: simpleNoteCategory,
       title: simpleNoteTitle.trim() || `Rated ${sliderRating}/10`,
       description: simpleNoteText || 'Quick rating update.',
       severity: simpleNoteCategory === 'Symptom' ? 'Moderate' : undefined,
       rating: sliderRating,
     });
+    
     setSimpleNoteTitle('');
     setSimpleNoteText('');
     setShowFormDetails(false);
+    setShowCustomDateTime(false);
   };
 
   // Advanced Mode additions
@@ -406,7 +432,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                             <div className="flex items-center justify-between gap-2">
                               <h4 className="text-[11px] font-semibold text-slate-300 leading-snug truncate">{e.title}</h4>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[8px] font-mono text-slate-500">{e.date}</span>
+                                <span className="text-[8px] font-mono text-slate-500">{e.date}{e.time && ` @ ${e.time}`}</span>
                                 <button
                                   onClick={() => deleteEvent(e.id)}
                                   className="text-slate-700 hover:text-rose-450 opacity-0 group-hover:opacity-100 transition-all p-0.5"
@@ -465,46 +491,89 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
               <div className="pt-3 border-t border-slate-800/40 space-y-3">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Quick Rating</span>
                 
-                {/* Slider + Rating Display + Submit */}
-                <div className="flex items-center gap-3">
-                  {/* Large rating number */}
-                  <div className="flex flex-col items-center min-w-[48px]">
-                    <span className={`text-2xl font-black font-mono leading-none ${
-                      sliderRating >= 8 ? 'text-emerald-400' : sliderRating >= 6 ? 'text-blue-400' : sliderRating >= 4 ? 'text-amber-400' : 'text-rose-400'
-                    }`}>
-                      {sliderRating}
+                {/* Android-style Brightness slider track with emoji */}
+                <div className="relative w-full h-9 bg-slate-900 border border-slate-800 rounded-full overflow-hidden flex items-center shadow-inner group">
+                  {/* Progress fill */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 transition-all duration-100 ease-out"
+                    style={{
+                      width: `${sliderRating * 10}%`,
+                      background: `linear-gradient(to right, ${themeColors.hex}33, ${themeColors.hex}bb)`,
+                      boxShadow: `0 0 12px ${themeColors.hex}33`
+                    }}
+                  />
+                  
+                  {/* Content display within track */}
+                  <div className="absolute inset-0 flex items-center justify-between px-3.5 pointer-events-none select-none">
+                    <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-350 transition-colors uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="text-sm">
+                        {sliderRating >= 9 ? '😄' : sliderRating >= 7 ? '🙂' : sliderRating >= 5 ? '😐' : sliderRating >= 3 ? '😕' : '😞'}
+                      </span>
+                      <span>Rating Slider</span>
                     </span>
-                    <span className="text-[8px] font-bold text-slate-500">/10</span>
+                    <span 
+                      className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white transition-colors"
+                      style={{
+                        backgroundColor: '#0f172a',
+                        borderColor: `${themeColors.hex}44`
+                      }}
+                    >
+                      {sliderRating}/10
+                    </span>
                   </div>
 
-                  {/* Interactive slider */}
-                  <div className="flex-grow flex flex-col gap-1">
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      value={sliderRating}
-                      onChange={(e) => setSliderRating(parseInt(e.target.value))}
-                      className="w-full h-2 rounded-lg cursor-pointer accent-indigo-500 bg-slate-800"
-                      style={{
-                        accentColor: sliderRating >= 8 ? '#34d399' : sliderRating >= 6 ? '#60a5fa' : sliderRating >= 4 ? '#fbbf24' : '#f87171',
-                      }}
-                    />
-                    <div className="flex justify-between px-0.5">
-                      <span className="text-[8px] text-slate-600 font-mono">1</span>
-                      <span className="text-[8px] text-slate-600 font-mono">5</span>
-                      <span className="text-[8px] text-slate-600 font-mono">10</span>
+                  {/* Opaque range input overlay */}
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={sliderRating}
+                    onChange={(e) => setSliderRating(parseInt(e.target.value))}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+
+                {/* Date & Time Selectors */}
+                {showCustomDateTime && (
+                  <div className="grid grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-850 animate-fade-in">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Date</label>
+                      <input
+                        type="date"
+                        value={customLogDate}
+                        onChange={(e) => setCustomLogDate(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Time (HH:MM)</label>
+                      <input
+                        type="time"
+                        value={customLogTime}
+                        onChange={(e) => setCustomLogTime(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                      />
                     </div>
                   </div>
+                )}
 
-                  {/* Submit button */}
+                {/* Submissions & Time triggers */}
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomDateTime(!showCustomDateTime)}
+                    className="text-[10px] text-slate-500 hover:text-slate-350 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <LucideIcons.Clock className="w-3.5 h-3.5" />
+                    <span>{showCustomDateTime ? "Use current time" : "Log for past date/time"}</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleAddSimpleNote()}
-                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-500/20"
+                    className="px-4 py-2 rounded-xl bg-indigo-650 hover:bg-indigo-550 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
                   >
-                    <LucideIcons.Plus className="w-4 h-4" />
-                    <span>Log</span>
+                    <span>Add</span>
                   </button>
                 </div>
 

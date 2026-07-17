@@ -20,7 +20,9 @@ interface DashboardContextType {
   
   // Rating and Precision Mode actions
   updateSystemRating: (systemId: string, rating: number) => void;
+  logSystemRating: (systemId: string, rating: number, date: string, time: string) => void;
   togglePrecisionMode: (systemId: string, enabled: boolean) => void;
+  updateSystemDescription: (systemId: string, description: string) => void;
   
   // System Tracking operations
   startTrackingSystem: (systemId: string) => void;
@@ -437,28 +439,68 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     });
 
-    // Instantly update local system state to force re-render
-    setSystems(prev => prev.map(s => {
-      if (s.id === systemId) {
-        const score = parsedRating * 10;
-        let status: SystemStatus = 'Stable';
-        if (score >= 90) status = 'Optimal';
-        else if (score >= 70) status = 'Stable';
-        else if (score >= 50) status = 'Suboptimal';
-        else status = 'Attention Required';
+    // Automatically delegate to logSystemRating with today's date and the current time (hours and minutes)
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    logSystemRating(systemId, rating, todayStr, timeStr);
+  };
 
-        return { ...s, subjectiveRating: parsedRating, score, status };
+  const logSystemRating = (systemId: string, rating: number, dateStr: string, timeStr: string) => {
+    const parsedRating = Math.min(10, Math.max(1, rating));
+
+    // Insert or update rating event in the wellness event logs for the specific date and time
+    setEvents(prev => {
+      const existingEventIndex = prev.findIndex(
+        e => e.systemId === systemId && e.date === dateStr && e.time === timeStr && e.rating !== undefined
+      );
+
+      if (existingEventIndex > -1) {
+        const updated = [...prev];
+        updated[existingEventIndex] = {
+          ...updated[existingEventIndex],
+          rating: parsedRating,
+          title: `Rated ${parsedRating}/10`
+        };
+        return updated;
+      } else {
+        const newEvent: MedicalEvent = {
+          id: `ev-rating-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          systemId,
+          date: dateStr,
+          time: timeStr,
+          type: 'Checkup',
+          title: `Rated ${parsedRating}/10`,
+          description: 'Subjective rating log.',
+          rating: parsedRating
+        };
+        return [newEvent, ...prev];
       }
-      return s;
-    }));
+    });
 
-    // Instantly append to today's history to force chart visual refresh
+    // Update system active rating in memory if the date matches today (2026-07-17 in seed data)
+    const todayStr = '2026-07-17';
+    if (dateStr === todayStr) {
+      setSystems(prev => prev.map(s => {
+        if (s.id === systemId) {
+          const score = parsedRating * 10;
+          let status: SystemStatus = 'Stable';
+          if (score >= 90) status = 'Optimal';
+          else if (score >= 70) status = 'Stable';
+          else if (score >= 50) status = 'Suboptimal';
+          else status = 'Attention Required';
+          return { ...s, subjectiveRating: parsedRating, score, status };
+        }
+        return s;
+      }));
+    }
+
+    // Instantly append to history for that specific date to force chart visual refresh
     setScoreHistory(prev => {
-      const filtered = prev.filter(h => !(h.systemId === systemId && h.date === todayStr));
+      const filtered = prev.filter(h => !(h.systemId === systemId && h.date === dateStr));
       return [...filtered, {
         systemId,
         score: parsedRating * 10,
-        date: todayStr
+        date: dateStr
       }];
     });
   };
@@ -482,6 +524,10 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const togglePrecisionMode = (systemId: string, enabled: boolean) => {
     setSystems(prev => prev.map(s => s.id === systemId ? { ...s, precisionEnabled: enabled } : s));
+  };
+
+  const updateSystemDescription = (systemId: string, description: string) => {
+    setSystems(prev => prev.map(s => s.id === systemId ? { ...s, description } : s));
   };
 
   const addEvent = (event: Omit<MedicalEvent, 'id'>) => {
@@ -571,7 +617,9 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       scoreHistory,
       userName: 'wwwYa',
       updateSystemRating,
+      logSystemRating,
       togglePrecisionMode,
+      updateSystemDescription,
       startTrackingSystem,
       archiveSystem,
       deleteSystemData,

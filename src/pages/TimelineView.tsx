@@ -164,7 +164,7 @@ export const TimelineView: React.FC = () => {
 
                 <div className="space-y-2 flex-grow">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-indigo-400">{ev.date}</span>
+                    <span className="text-xs font-mono font-bold text-indigo-400">{ev.date}{ev.time && ` @ ${ev.time}`}</span>
                     
                     {/* System Tag */}
                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${systemStyle}`}>

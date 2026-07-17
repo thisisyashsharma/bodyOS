@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as LucideIcons from 'lucide-react';
 import { useDashboard } from '../context/DashboardContext';
 import { InteractiveBodyMap } from '../components/InteractiveBodyMap';
@@ -28,8 +28,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
     habits,
     goals,
     metrics,
-    updateSystemRating,
+    logSystemRating,
     togglePrecisionMode,
+    updateSystemDescription,
     resetAllData,
     startTrackingSystem,
     archiveSystem,
@@ -42,20 +43,46 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
     const firstTracked = systems.find(s => s.isTracking);
     return firstTracked ? firstTracked.id : 'respiratory';
   });
+
+  const selectedSystem = systems.find(s => s.id === selectedSystemId) || systems[0];
+  const trackedSystems = systems.filter(s => s.isTracking);
+  const untrackedSystems = systems.filter(s => !s.isTracking);
+  const trackedSystemIds = new Set(trackedSystems.map(s => s.id));
   
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  
+  // State to manage toggle of "Add Systems to Track" accordion on dashboard
+  const [isAddSystemsOpen, setIsAddSystemsOpen] = useState(false);
+
+  // States to manage Description edits/additions
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [tempDesc, setTempDesc] = useState('');
+
+  // Ratings log slider and custom date/time states
+  const [dashRating, setDashRating] = useState<number>(8);
+  const [customLogDate, setCustomLogDate] = useState<string>('2026-07-17');
+  const [customLogTime, setCustomLogTime] = useState<string>('12:00');
+  const [showCustomDateTime, setShowCustomDateTime] = useState<boolean>(false);
 
   // Conscious Delete Verification State
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [systemIdToDelete, setSystemIdToDelete] = useState<string | null>(null);
 
-  const selectedSystem = systems.find(s => s.id === selectedSystemId) || systems[0];
-
-  const trackedSystems = systems.filter(s => s.isTracking);
-  const untrackedSystems = systems.filter(s => !s.isTracking);
-  const trackedSystemIds = new Set(trackedSystems.map(s => s.id));
+  // Reset editing states and sync rating/time states on system selection changes
+  useEffect(() => {
+    setIsEditingDesc(false);
+    setTempDesc(selectedSystem.description);
+    setDashRating(selectedSystem.subjectiveRating);
+    
+    // Set time default to current local hour & minutes
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    setCustomLogTime(timeStr);
+    setCustomLogDate('2026-07-17'); // seed date anchor
+    setShowCustomDateTime(false);
+  }, [selectedSystemId, selectedSystem]);
 
   // Overall Statistics calculated on tracked systems only
   const avgHealthScore = trackedSystems.length > 0
@@ -105,6 +132,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
 
   const currentTheme = systemColors[selectedSystem.id] || { text: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/20', hex: '#818cf8' };
 
+  // Helper to check if system has any history/data
+  const systemHasData = (systemId: string) => {
+    return events.some(e => e.systemId === systemId) ||
+           habits.some(h => h.systemId === systemId) ||
+           goals.some(g => g.systemId === systemId) ||
+           metrics.some(m => m.systemId === systemId);
+  };
+
   const getIcon = (iconName: string, className = "w-5 h-5") => {
     const IconComponent = (LucideIcons as any)[iconName] || LucideIcons.Heart;
     return <IconComponent className={className} />;
@@ -129,14 +164,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
     }
   };
 
-  // Helper to check if system has any history/data
-  const systemHasData = (systemId: string) => {
-    return events.some(e => e.systemId === systemId) ||
-           habits.some(h => h.systemId === systemId) ||
-           goals.some(g => g.systemId === systemId) ||
-           metrics.some(m => m.systemId === systemId);
-  };
-
   return (
     <div className="space-y-6 animate-fade-in text-slate-200">
       
@@ -158,7 +185,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                 resetAllData();
               }
             }}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-800 bg-slate-900/30 hover:bg-slate-800/40 text-slate-400 hover:text-slate-300 text-xs font-semibold transition-colors"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-800 bg-slate-900/30 hover:bg-slate-800/40 text-slate-400 hover:text-slate-350 text-xs font-semibold transition-colors"
           >
             <LucideIcons.RotateCcw className="w-4 h-4" />
             <span>Reset Demo Data</span>
@@ -255,7 +282,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                       className={`flex-1 py-1.5 text-center text-[10px] md:text-xs font-bold rounded-lg transition-all ${
                         !selectedSystem.precisionEnabled 
                           ? 'bg-slate-800 border border-slate-700/60 text-white shadow-sm' 
-                          : 'text-slate-500 hover:text-slate-300'
+                          : 'text-slate-500 hover:text-slate-350'
                       }`}
                     >
                       Daily Status (1-10)
@@ -266,55 +293,169 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                       className={`flex-1 py-1.5 text-center text-[10px] md:text-xs font-bold rounded-lg transition-all ${
                         selectedSystem.precisionEnabled 
                           ? 'bg-indigo-650 text-white shadow-md' 
-                          : 'text-slate-500 hover:text-slate-350'
+                          : 'text-slate-500 hover:text-slate-355'
                       }`}
                     >
                       Precision Vitals
                     </button>
                   </div>
 
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    {selectedSystem.description}
-                  </p>
+                  {/* Param Description with details/edit inline button */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Description Details</span>
+                      {!isEditingDesc && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTempDesc(selectedSystem.description);
+                            setIsEditingDesc(true);
+                          }}
+                          className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-0.5 transition-colors cursor-pointer"
+                        >
+                          <LucideIcons.Edit className="w-3 h-3" />
+                          <span>Edit Details</span>
+                        </button>
+                      )}
+                    </div>
+                    {isEditingDesc ? (
+                      <div className="space-y-2 animate-fade-in">
+                        <textarea
+                          value={tempDesc}
+                          onChange={(e) => setTempDesc(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-sans"
+                          rows={3}
+                          placeholder="Log custom descriptions or details for this parameter..."
+                        />
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingDesc(false)}
+                            className="px-2 py-1 rounded-md text-[10px] border border-slate-850 hover:bg-slate-850 text-slate-400 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateSystemDescription(selectedSystem.id, tempDesc);
+                              setIsEditingDesc(false);
+                            }}
+                            className="px-2.5 py-1 rounded-md text-[10px] bg-indigo-650 hover:bg-indigo-550 text-white font-bold cursor-pointer"
+                          >
+                            Save Details
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                        {selectedSystem.description || "No custom details entered. Click Edit Details to add."}
+                      </p>
+                    )}
+                  </div>
 
                   {/* RENDER MODE CONTENT */}
                   {!selectedSystem.precisionEnabled ? (
-                    /* SUBJECTIVE MODE: 1-10 GRID */
-                    <div className="space-y-2.5 animate-fade-in">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                        How does it feel today?
-                      </label>
+                    /* SUBJECTIVE MODE: SOOTHING ANDROID BRIGHTNESS STYLE RANGE SLIDER */
+                    <div className="space-y-3.5 animate-fade-in pt-1">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                          How does it feel today?
+                        </label>
+                        <span className={`text-[9px] font-semibold border px-2 py-0.5 rounded-md ${getRatingColorClass(dashRating)}`}>
+                          Status: {getRatingDescriptor(dashRating)}
+                        </span>
+                      </div>
                       
-                      <div className="grid grid-cols-5 gap-1.5 bg-slate-900/60 p-2.5 rounded-2xl border border-slate-850">
-                        {Array.from({ length: 10 }).map((_, i) => {
-                          const ratingValue = i + 1;
-                          const isSelected = selectedSystem.subjectiveRating === ratingValue;
-                          
-                          return (
-                            <button
-                              key={ratingValue}
-                              type="button"
-                              onClick={() => updateSystemRating(selectedSystem.id, ratingValue)}
-                              className={`aspect-square rounded-lg text-xs font-mono font-bold flex items-center justify-center transition-all ${
-                                isSelected 
-                                  ? 'bg-indigo-650 border border-indigo-500 scale-105 shadow-md shadow-indigo-650/20 text-white' 
-                                  : 'bg-slate-950/40 border border-slate-900/60 text-slate-455 hover:text-slate-200 hover:border-slate-800'
-                              }`}
-                            >
-                              {ratingValue}
-                            </button>
-                          );
-                        })}
+                      {/* Android-style Brightness slider track */}
+                      <div className="relative w-full h-9 bg-slate-900 border border-slate-800 rounded-full overflow-hidden flex items-center shadow-inner group">
+                        {/* Progress fill */}
+                        <div
+                          className="absolute left-0 top-0 bottom-0 transition-all duration-100 ease-out"
+                          style={{
+                            width: `${dashRating * 10}%`,
+                            background: `linear-gradient(to right, ${currentTheme.hex}33, ${currentTheme.hex}bb)`,
+                            boxShadow: `0 0 12px ${currentTheme.hex}33`
+                          }}
+                        />
+                        
+                        {/* Content display within track */}
+                        <div className="absolute inset-0 flex items-center justify-between px-3.5 pointer-events-none select-none">
+                          <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-350 transition-colors uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="text-sm">
+                              {dashRating >= 9 ? '😄' : dashRating >= 7 ? '🙂' : dashRating >= 5 ? '😐' : dashRating >= 3 ? '😕' : '😞'}
+                            </span>
+                            <span>Rating Slider</span>
+                          </span>
+                          <span 
+                            className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white transition-colors"
+                            style={{
+                              backgroundColor: '#0f172a',
+                              borderColor: `${currentTheme.hex}44`
+                            }}
+                          >
+                            {dashRating}/10
+                          </span>
+                        </div>
+
+                        {/* Opaque slider on top */}
+                        <input
+                          type="range"
+                          min="1"
+                          max="10"
+                          value={dashRating}
+                          onChange={(e) => setDashRating(parseInt(e.target.value))}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        />
                       </div>
 
-                      <div className="flex justify-between items-center px-1 pt-0.5">
-                        <span className={`text-[9px] font-semibold border px-2 py-0.5 rounded-md ${getRatingColorClass(selectedSystem.subjectiveRating)}`}>
-                          Status: {getRatingDescriptor(selectedSystem.subjectiveRating)}
-                        </span>
-                        <span className="text-[9px] font-mono text-slate-500">
-                          Score: {selectedSystem.score}%
-                        </span>
+                      {/* Custom Time and Date inputs */}
+                      {showCustomDateTime && (
+                        <div className="grid grid-cols-2 gap-3 bg-slate-950/60 p-3 rounded-2xl border border-slate-850 animate-fade-in">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Date</label>
+                            <input
+                              type="date"
+                              value={customLogDate}
+                              onChange={(e) => setCustomLogDate(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Log Time (HH:MM)</label>
+                            <input
+                              type="time"
+                              value={customLogTime}
+                              onChange={(e) => setCustomLogTime(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Log triggers & timer display */}
+                      <div className="flex items-center justify-between gap-4 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomDateTime(!showCustomDateTime)}
+                          className="text-[10px] text-slate-500 hover:text-slate-350 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <LucideIcons.Clock className="w-3.5 h-3.5" />
+                          <span>{showCustomDateTime ? "Use current time" : "Log for past date/time"}</span>
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            logSystemRating(selectedSystem.id, dashRating, customLogDate, customLogTime);
+                            alert(`Successfully logged ${selectedSystem.name} rating of ${dashRating}/10 for ${customLogDate} @ ${customLogTime}`);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-indigo-650 hover:bg-indigo-550 text-white font-bold text-xs transition-colors shadow-md shadow-indigo-650/15 cursor-pointer"
+                        >
+                          Add
+                        </button>
                       </div>
+
                     </div>
                   ) : (
                     /* PRECISION MODE SUMMARY & INSTRUCTIONS */
@@ -361,7 +502,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
               <div className="pt-4 border-t border-slate-800/60 space-y-2">
                 <button
                   onClick={() => onNavigateToSystem(selectedSystem.id)}
-                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-200 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all"
+                  className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-855 border border-slate-800 text-slate-200 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <span>Examine detailed logs & goals</span>
                   <LucideIcons.ArrowRight className="w-3.5 h-3.5" />
@@ -372,7 +513,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                   <button
                     type="button"
                     onClick={() => archiveSystem(selectedSystem.id)}
-                    className="flex-1 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800/40 text-slate-455 hover:text-slate-350 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                    className="flex-1 py-1.5 rounded-lg border border-slate-800 hover:bg-slate-800/40 text-slate-455 hover:text-slate-350 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                     title="Move back to inactive tracking. No data is lost."
                   >
                     <LucideIcons.Archive className="w-3.5 h-3.5" />
@@ -381,7 +522,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                   <button
                     type="button"
                     onClick={() => openDeleteModal(selectedSystem.id)}
-                    className="flex-1 py-1.5 rounded-lg border border-rose-955/20 bg-rose-955/5 hover:bg-rose-955/20 text-rose-455 hover:text-rose-400 text-[10px] font-bold flex items-center justify-center gap-1 transition-all"
+                    className="flex-1 py-1.5 rounded-lg border border-rose-955/20 bg-rose-955/5 hover:bg-rose-955/20 text-rose-455 hover:text-rose-400 text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
                     title="Permanently erase all historical event logs and score history."
                   >
                     <LucideIcons.Trash2 className="w-3.5 h-3.5" />
@@ -455,69 +596,77 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
             </div>
           </div>
 
-          {/* Section 2: Things User Wants to Track (Inactive/Plus Add) */}
+          {/* Section 2: Things User Wants to Track (Accordion toggle) */}
           <div className="space-y-3">
-            <h2 className="font-display font-semibold text-xs text-slate-455 uppercase tracking-widest flex items-center gap-1.5">
-              <LucideIcons.Plus className="w-3.5 h-3.5 text-slate-400" />
-              Add Systems to Track ({untrackedSystems.length})
-            </h2>
+            <button
+              type="button"
+              onClick={() => setIsAddSystemsOpen(!isAddSystemsOpen)}
+              className="w-full flex items-center justify-between text-[11px] font-bold text-slate-455 uppercase tracking-widest px-3 py-1.5 bg-slate-900/30 border border-slate-900 hover:text-slate-300 rounded-xl transition-all cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <LucideIcons.Plus className="w-3.5 h-3.5 text-slate-400" />
+                <span>Add Systems to Track ({untrackedSystems.length})</span>
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isAddSystemsOpen ? 'rotate-180' : ''}`} />
+            </button>
             
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-              {untrackedSystems.length === 0 ? (
-                <p className="text-[10px] text-slate-550 italic px-2 py-1">All systems are currently added to active tracking.</p>
-              ) : (
-                untrackedSystems.map((sys) => {
-                  const isSelected = selectedSystemId === sys.id;
-                  const hasHistory = systemHasData(sys.id);
-                  
-                  return (
-                    <div
-                      key={sys.id}
-                      className={`p-3 rounded-2xl border transition-all flex items-center justify-between group ${
-                        isSelected
-                          ? 'bg-slate-900/40 border-slate-800/80 shadow-md'
-                          : 'bg-slate-955/10 border-slate-955/40 hover:bg-slate-900/10 hover:border-slate-850/60'
-                      }`}
-                    >
-                      <div 
-                        className="flex items-center gap-3 cursor-pointer flex-grow"
-                        onClick={() => setSelectedSystemId(sys.id)}
+            {isAddSystemsOpen && (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 animate-fade-in pt-1">
+                {untrackedSystems.length === 0 ? (
+                  <p className="text-[10px] text-slate-550 italic px-2 py-1">All systems are currently added to active tracking.</p>
+                ) : (
+                  untrackedSystems.map((sys) => {
+                    const isSelected = selectedSystemId === sys.id;
+                    const hasHistory = systemHasData(sys.id);
+                    
+                    return (
+                      <div
+                        key={sys.id}
+                        className={`p-3 rounded-2xl border transition-all flex items-center justify-between group ${
+                          isSelected
+                            ? 'bg-slate-900/40 border-slate-800/80 shadow-md'
+                            : 'bg-slate-955/10 border-slate-955/40 hover:bg-slate-900/10 hover:border-slate-850/60'
+                        }`}
                       >
-                        <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-500 group-hover:text-slate-400 transition-colors">
-                          {getIcon(sys.iconName, "w-4 h-4")}
+                        <div 
+                          className="flex items-center gap-3 cursor-pointer flex-grow"
+                          onClick={() => setSelectedSystemId(sys.id)}
+                        >
+                          <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 text-slate-500 group-hover:text-slate-400 transition-colors">
+                            {getIcon(sys.iconName, "w-4 h-4")}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors flex items-center gap-1.5">
+                              <span>{sys.name}</span>
+                              {hasHistory && (
+                                <span className="text-[8px] font-bold bg-blue-955 text-blue-400 border border-blue-900/20 px-1.5 py-0.2 rounded uppercase tracking-wider shrink-0 scale-95 origin-left">
+                                  Archived
+                                </span>
+                              )}
+                            </h4>
+                            <span className="text-[9px] text-slate-550 block leading-tight">
+                              Tap to preview system details
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="text-xs font-semibold text-slate-400 group-hover:text-slate-300 transition-colors flex items-center gap-1.5">
-                            <span>{sys.name}</span>
-                            {hasHistory && (
-                              <span className="text-[8px] font-bold bg-blue-955 text-blue-400 border border-blue-900/20 px-1.5 py-0.2 rounded uppercase tracking-wider shrink-0 scale-95 origin-left">
-                                Archived
-                              </span>
-                            )}
-                          </h4>
-                          <span className="text-[9px] text-slate-550 block leading-tight">
-                            Tap to preview system details
-                          </span>
-                        </div>
+                        
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startTrackingSystem(sys.id);
+                          }}
+                          className="p-2 rounded-xl bg-slate-900 hover:bg-indigo-650 border border-slate-855 text-slate-455 hover:text-white transition-all shadow-md active:scale-95 cursor-pointer ml-2"
+                          title={`Start tracking ${sys.name}`}
+                        >
+                          <LucideIcons.Plus className="w-4 h-4" />
+                        </button>
                       </div>
-                      
-                      {/* Plus button to start tracking directly */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startTrackingSystem(sys.id);
-                        }}
-                        className="p-2 rounded-xl bg-slate-900 hover:bg-indigo-650 border border-slate-850 text-slate-450 hover:text-white transition-all shadow-md active:scale-95 cursor-pointer ml-2"
-                        title={`Start tracking ${sys.name}`}
-                      >
-                        <LucideIcons.Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
 
         </div>
@@ -526,7 +675,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
 
       {/* CONSCIOUS DELETE VERIFICATION MODAL OVERLAY */}
       {isDeleteModalOpen && systemIdToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/80 backdrop-blur-md animate-fade-in">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center gap-3 text-rose-400">
               <div className="p-2 rounded-2xl bg-rose-500/10 border border-rose-500/20">
@@ -561,7 +710,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
               <button
                 type="button"
                 onClick={() => setIsDeleteModalOpen(false)}
-                className="flex-1 py-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-350 text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl border border-slate-800 bg-slate-900 hover:bg-slate-850 text-slate-450 hover:text-slate-350 text-xs font-bold transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -572,7 +721,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                 className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5
                   ${deleteConfirmText === userName
                     ? 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer shadow-lg shadow-rose-600/10'
-                    : 'bg-slate-950 border border-slate-850 text-slate-600 cursor-not-allowed'
+                    : 'bg-slate-955 border border-slate-855 text-slate-600 cursor-not-allowed'
                   }
                 `}
               >

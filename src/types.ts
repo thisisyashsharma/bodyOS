@@ -25,6 +25,7 @@ export interface MedicalEvent {
   severity?: 'Mild' | 'Moderate' | 'Severe';
   rating?: number; // Subjective rating out of 10 logged with this event
   notes?: string;
+  time?: string; // HH:MM (e.g. 14:30)
 }
 
 export interface ProtectiveHabit {
