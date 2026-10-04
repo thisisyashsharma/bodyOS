@@ -4,6 +4,7 @@ import { useDashboard } from '../context/DashboardContext';
 import { InteractiveBodyMap } from '../components/InteractiveBodyMap';
 import { EventModal } from '../components/EventModal';
 import { QuickBodyScanModal } from '../components/QuickBodyScanModal';
+import { BodyPulseModal } from '../components/BodyPulseModal';
 
 interface DashboardProps {
   onNavigateToSystem: (systemId: string) => void;
@@ -83,6 +84,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [systemIdToDelete, setSystemIdToDelete] = useState<string | null>(null);
+
+  // Body Pulse Modal State
+  const [isBodyPulseOpen, setIsBodyPulseOpen] = useState(false);
+  const [hasOpenedPulseToday, setHasOpenedPulseToday] = useState(false);
 
   // Reset editing states and sync rating/time states on system selection changes
   useEffect(() => {
@@ -176,6 +181,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
     });
 
     setIsQuickScanOpen(false);
+    setHasOpenedPulseToday(true);
+    setIsBodyPulseOpen(true);
     setQuickScanToast(true);
     setTimeout(() => setQuickScanToast(false), 4000);
   };
@@ -707,10 +714,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                 );
               })}
             </div>
+            {/* Single Action Button directly below Live Tracking params card */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (hasTrackedToday) {
+                    setHasOpenedPulseToday(true);
+                    setIsBodyPulseOpen(true);
+                  } else {
+                    setIsQuickScanOpen(true);
+                  }
+                }}
+                className={`w-full py-3 px-4 rounded-2xl font-bold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-between border group ${
+                  hasTrackedToday
+                    ? !hasOpenedPulseToday
+                      ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white border-emerald-400/40 shadow-lg shadow-emerald-500/35 hover:shadow-emerald-500/50 animate-pulse'
+                      : 'bg-slate-900 hover:bg-slate-855 border-slate-800 text-slate-300 font-semibold shadow-none'
+                    : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500 hover:from-indigo-400 hover:to-cyan-400 text-white border-indigo-400/30 shadow-indigo-500/25 hover:shadow-indigo-500/40'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-1.5 rounded-xl ${
+                    hasTrackedToday && hasOpenedPulseToday
+                      ? 'bg-slate-800 text-emerald-400'
+                      : 'bg-white/15 text-white'
+                  }`}>
+                    {hasTrackedToday ? (
+                      <LucideIcons.Sparkles className="w-4 h-4" />
+                    ) : (
+                      <LucideIcons.Zap className="w-4 h-4 animate-bounce" />
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <span className="block text-xs font-bold leading-tight">
+                      {hasTrackedToday ? "✨ View Body Pulse" : "⚡ Start Quick Scan (10s)"}
+                    </span>
+                    <span className={`text-[10px] font-mono block ${
+                      hasTrackedToday && hasOpenedPulseToday ? 'text-slate-400' : 'text-white/80'
+                    }`}>
+                      {hasTrackedToday 
+                        ? hasOpenedPulseToday ? "Audit Complete • Shift Checked" : "🎉 Audit Complete • Tap to view 3-day shift"
+                        : "Audit active parameters"
+                      }
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <LucideIcons.ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+                </div>
+              </button>
+            </div>
           </div>
 
         </div>
-
       </div>
 
       {/* CONSCIOUS DELETE VERIFICATION MODAL OVERLAY */}
@@ -743,7 +801,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
               placeholder={`Type "${userName}" to confirm`}
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-rose-500 font-mono"
+              className="w-full bg-slate-950 border border-slate-855 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-rose-500 font-mono"
             />
 
             <div className="flex gap-3 pt-2">
@@ -784,6 +842,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
         onClose={() => setIsQuickScanOpen(false)}
         systems={systems}
         onSaveAll={handleSaveQuickScan}
+      />
+
+      <BodyPulseModal
+        isOpen={isBodyPulseOpen}
+        onClose={() => setIsBodyPulseOpen(false)}
+        systems={systems}
+        events={events}
       />
     </div>
   );
