@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import * as LucideIcons from 'lucide-react';
 import { useDashboard } from '../context/DashboardContext';
 import { MetricsChart } from '../components/MetricsChart';
@@ -52,6 +52,10 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     addMetricLog,
     deleteMetricLog,
     updateSystemDescription,
+    addPrecisionParameter,
+    deletePrecisionParameter,
+    updatePrecisionValue,
+    updatePrecisionWeightages,
   } = useDashboard();
 
   // Slider-first form state
@@ -92,6 +96,14 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
   const [expandedEventIds, setExpandedEventIds] = useState<Record<string, boolean>>({});
   const [selectedLogDate, setSelectedLogDate] = useState<string | null>(null);
 
+  // Precision parameter form state
+  const [showAddParamForm, setShowAddParamForm] = useState(false);
+  const [newParamTitle, setNewParamTitle] = useState('');
+  const [newParamRangeStart, setNewParamRangeStart] = useState('0');
+  const [newParamRangeEnd, setNewParamRangeEnd] = useState('10');
+  const [isPrecisionInputExpanded, setIsPrecisionInputExpanded] = useState(true);
+  const [isManageParamsExpanded, setIsManageParamsExpanded] = useState(false);
+
   const toggleEventExpand = (eventId: string) => {
     setExpandedEventIds(prev => ({ ...prev, [eventId]: !prev[eventId] }));
   };
@@ -123,16 +135,6 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     setCustomLogDate('2026-07-17'); // seed date anchor
     setShowCustomDateTime(false);
   }, [systemId, system]);
-  if (!system) {
-    return (
-      <div className="text-center p-8 space-y-4">
-        <p className="text-slate-400">System not found.</p>
-        <button onClick={onBack} className="text-indigo-400 font-semibold hover:underline">
-          Go Back
-        </button>
-      </div>
-    );
-  }
 
   // Filter lists
   const systemEvents = events.filter((e) => e.systemId === systemId);
@@ -188,7 +190,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     reproductive: { text: 'text-rose-400', bg: 'bg-rose-400/10', border: 'border-rose-400/20', hex: '#f472b6' },
   };
 
-  const themeColors = systemColors[system.id] || { text: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/20', hex: '#818cf8' };
+  const themeColors = (system && systemColors[system.id]) || { text: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/20', hex: '#818cf8' };
 
   const getStatusStyles = (status: string) => {
     switch (status) {
@@ -285,6 +287,57 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
     setNewMetricUnit('');
   };
 
+  const handleAddParam = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newParamTitle.trim()) return;
+    const start = parseFloat(newParamRangeStart) || 0;
+    const end = parseFloat(newParamRangeEnd) || 10;
+    if (end <= start) return;
+    addPrecisionParameter(systemId, newParamTitle.trim(), start, end);
+    setNewParamTitle('');
+    setNewParamRangeStart('0');
+    setNewParamRangeEnd('10');
+    setShowAddParamForm(false);
+  };
+
+  const handleWeightageChange = useCallback((paramId: string, newWeightage: number, allParams: any[]) => {
+    if (allParams.length < 2) return;
+    const clamped = Math.min(100, Math.max(0, Math.round(newWeightage)));
+    const otherParams = allParams.filter((p: any) => p.id !== paramId);
+    const otherTotal = otherParams.reduce((sum: number, p: any) => sum + p.weightage, 0);
+    const remaining = 100 - clamped;
+    
+    const weightages = allParams.map((p: any) => {
+      if (p.id === paramId) {
+        return { paramId: p.id, weightage: clamped };
+      }
+      if (otherTotal === 0) {
+        return { paramId: p.id, weightage: Math.round(remaining / otherParams.length) };
+      }
+      return { paramId: p.id, weightage: Math.round((p.weightage / otherTotal) * remaining) };
+    });
+    
+    const total = weightages.reduce((s: number, w: any) => s + w.weightage, 0);
+    if (total !== 100 && weightages.length > 0) {
+      const diff = 100 - total;
+      const lastOther = weightages.find((w: any) => w.paramId !== paramId);
+      if (lastOther) lastOther.weightage += diff;
+    }
+    
+    updatePrecisionWeightages(systemId, weightages);
+  }, [systemId, updatePrecisionWeightages]);
+
+  if (!system) {
+    return (
+      <div className="text-center p-8 space-y-4">
+        <p className="text-slate-400">System not found.</p>
+        <button onClick={onBack} className="text-indigo-400 font-semibold hover:underline">
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in text-slate-200">
       
@@ -362,7 +415,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
                       }`}
                     >
-                      <span>Precision Vitals</span>
+                      <span>Precision</span>
                       {system.precisionEnabled && <LucideIcons.Check className="w-3.5 h-3.5 text-white" />}
                     </button>
                   </div>
@@ -900,20 +953,308 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
 
       ) : (
 
-        /* ADVANCED / PRECISION MODE DETAIL MODULES */
+        /* PRECISION MODE — Custom Parameters with Weighted Scoring */
         <div className="space-y-4 animate-fade-in">
-          
-          {/* Detailed Calculations Instruction Box at the top */}
-          <div className="bg-indigo-950/20 border border-indigo-900/30 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed text-indigo-300">
-            <LucideIcons.Info className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="block text-slate-100 font-semibold mb-0.5">How Precision Scoring Works</strong>
-              <p className="text-slate-350">
-                Your Bio-Score is calculated from average habit adherence (40%), vital log thresholds (40%), and recent symptoms logged in the last 14 days (-20% maximum deduction). You can customize and log parameters in each section below.
-              </p>
+
+          {/* Section 1: Daily Parameter Input Sliders */}
+          {system.precisionParameters.length > 0 && (
+            <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsPrecisionInputExpanded(!isPrecisionInputExpanded)}
+                className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-2">
+                  <LucideIcons.Sliders className="w-4 h-4" style={{ color: themeColors.hex }} />
+                  <span>Daily Input</span>
+                </span>
+                <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isPrecisionInputExpanded ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isPrecisionInputExpanded && (
+                <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
+                  {/* Individual Parameter Sliders */}
+                  {system.precisionParameters.map((param, idx) => {
+                    const range = param.rangeEnd - param.rangeStart;
+                    const fillPercent = range > 0 ? ((param.currentValue - param.rangeStart) / range) * 100 : 0;
+                    
+                    return (
+                      <div key={param.id} className="precision-param-card animate-precision-in" style={{ animationDelay: `${idx * 60}ms` }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-slate-200 uppercase tracking-wide">{param.title}</span>
+                          <div className="flex items-center gap-2">
+                            <span 
+                              className="text-xs font-black font-mono px-2 py-0.5 rounded-full border text-white"
+                              style={{ backgroundColor: '#0f172a', borderColor: `${themeColors.hex}44` }}
+                            >
+                              {Number.isInteger(param.currentValue) ? param.currentValue : param.currentValue.toFixed(1)} / {param.rangeEnd}
+                            </span>
+                            {system.precisionParameters.length > 1 && (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded-full">
+                                {param.weightage}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Slider Track */}
+                        <div className="precision-slider-track">
+                          <div
+                            className="precision-slider-fill"
+                            style={{
+                              width: `${fillPercent}%`,
+                              background: `linear-gradient(to right, ${themeColors.hex}33, ${themeColors.hex}bb)`,
+                              boxShadow: `0 0 12px ${themeColors.hex}33`
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-between px-3.5 pointer-events-none select-none">
+                            <span className="text-[10px] font-bold text-slate-500">{param.rangeStart}</span>
+                            <span className="text-[10px] font-bold text-slate-500">{param.rangeEnd}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={param.rangeStart}
+                            max={param.rangeEnd}
+                            step={range <= 10 ? 0.5 : 1}
+                            value={param.currentValue}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              updatePrecisionValue(systemId, param.id, val);
+                              playSliderSound(Math.round((val / param.rangeEnd) * 10));
+                            }}
+                            className="precision-slider-input"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Aggregated Score Display */}
+                  <div className="precision-aggregate-display">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <LucideIcons.Zap className="w-4 h-4" style={{ color: themeColors.hex }} />
+                        <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Aggregated Score</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-2xl font-black font-display text-slate-100">
+                          {system.subjectiveRating}
+                        </span>
+                        <span className="text-slate-500 text-xs font-semibold font-mono">/10</span>
+                      </div>
+                    </div>
+                    {/* Visual weight breakdown bar */}
+                    {system.precisionParameters.length > 1 && (
+                      <div className="mt-3 space-y-1.5">
+                        <div className="precision-weightage-bar">
+                          {system.precisionParameters.map((param, idx) => {
+                            const colors = [
+                              themeColors.hex,
+                              '#06b6d4', '#f59e0b', '#10b981', '#ec4899', '#a855f7', '#f97316'
+                            ];
+                            return (
+                              <div
+                                key={param.id}
+                                className="precision-weightage-segment"
+                                style={{
+                                  width: `${param.weightage}%`,
+                                  backgroundColor: colors[idx % colors.length],
+                                  opacity: 0.7
+                                }}
+                                title={`${param.title}: ${param.weightage}%`}
+                              />
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {system.precisionParameters.map((param, idx) => {
+                            const colors = [
+                              themeColors.hex,
+                              '#06b6d4', '#f59e0b', '#10b981', '#ec4899', '#a855f7', '#f97316'
+                            ];
+                            return (
+                              <span key={param.id} className="flex items-center gap-1 text-[9px] text-slate-400">
+                                <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: colors[idx % colors.length], opacity: 0.7 }} />
+                                {param.title}: {param.weightage}%
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Empty state when no parameters */}
+          {system.precisionParameters.length === 0 && (
+            <div className="glass-panel rounded-2xl border border-slate-800/60 p-8 text-center space-y-3">
+              <LucideIcons.Sliders className="w-10 h-10 mx-auto text-slate-600" />
+              <div>
+                <p className="text-sm font-semibold text-slate-300">No parameters defined yet</p>
+                <p className="text-xs text-slate-500 mt-1">Create custom parameters to track this system with precision scoring</p>
+              </div>
+            </div>
+          )}
+
+          {/* Section 2: Manage Parameters (Add / Edit / Weightage) */}
+          <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsManageParamsExpanded(!isManageParamsExpanded)}
+              className="w-full flex items-center justify-between p-4 text-left font-display font-semibold text-sm text-slate-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <LucideIcons.Settings className="w-4 h-4 text-slate-400" />
+                <span>Manage Parameters</span>
+                {system.precisionParameters.length > 0 && (
+                  <span className="text-[9px] font-bold text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded-full">
+                    {system.precisionParameters.length}
+                  </span>
+                )}
+              </span>
+              <LucideIcons.ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isManageParamsExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isManageParamsExpanded && (
+              <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
+                
+                {/* Existing Parameters List with Weightage Sliders */}
+                {system.precisionParameters.length > 0 && (
+                  <div className="space-y-3">
+                    {system.precisionParameters.map((param, idx) => {
+                      const colors = [
+                        themeColors.hex,
+                        '#06b6d4', '#f59e0b', '#10b981', '#ec4899', '#a855f7', '#f97316'
+                      ];
+                      return (
+                        <div key={param.id} className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl group">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colors[idx % colors.length], opacity: 0.7 }} />
+                              <span className="text-xs font-semibold text-slate-200 truncate">{param.title}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[9px] font-mono text-slate-500">
+                                Range: {param.rangeStart}–{param.rangeEnd}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => deletePrecisionParameter(systemId, param.id)}
+                                className="text-slate-600 hover:text-rose-455 opacity-0 group-hover:opacity-100 transition-all p-0.5 cursor-pointer"
+                                title="Remove parameter"
+                              >
+                                <LucideIcons.Trash className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Weightage Slider — only when 2+ params */}
+                          {system.precisionParameters.length > 1 && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-900/60 flex items-center gap-3">
+                              <span className="text-[10px] text-slate-500 font-mono w-14 shrink-0">Weight:</span>
+                              <input
+                                type="range"
+                                min="5"
+                                max="95"
+                                value={param.weightage}
+                                onChange={(e) => {
+                                  handleWeightageChange(param.id, parseInt(e.target.value), system.precisionParameters);
+                                  playSliderSound(Math.round(parseInt(e.target.value) / 10));
+                                }}
+                                className="precision-weightage-slider flex-grow"
+                              />
+                              <span className="text-xs font-mono font-bold text-slate-300 w-10 text-right">
+                                {param.weightage}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add Parameter Form */}
+                {!showAddParamForm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddParamForm(true)}
+                    className="w-full p-3 rounded-xl border border-dashed border-indigo-500/25 hover:border-indigo-500/40 bg-indigo-950/10 hover:bg-indigo-950/20 text-xs font-semibold text-indigo-400 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <LucideIcons.Plus className="w-4 h-4" />
+                    <span>Add New Parameter</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handleAddParam} className="precision-add-form space-y-3 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">New Parameter</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddParamForm(false)}
+                        className="text-slate-500 hover:text-slate-300 p-0.5 cursor-pointer"
+                      >
+                        <LucideIcons.X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Parameter name (e.g. Sleep Hours, Relaxed Neck)"
+                      value={newParamTitle}
+                      onChange={(e) => setNewParamTitle(e.target.value)}
+                      className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                      required
+                      autoFocus
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Range Start</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={newParamRangeStart}
+                          onChange={(e) => setNewParamRangeStart(e.target.value)}
+                          className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Range End</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={newParamRangeEnd}
+                          onChange={(e) => setNewParamRangeEnd(e.target.value)}
+                          className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddParamForm(false)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-400 font-semibold text-[10px] transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
+                      >
+                        <LucideIcons.Plus className="w-3.5 h-3.5" />
+                        <span>Create</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Keep existing precision cards below for vitals, events, habits, goals */}
           {/* Card 1: Vitals & Biometrics Logs */}
           <div className="glass-panel rounded-2xl border border-slate-800/60 overflow-hidden">
             <button
@@ -930,7 +1271,6 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
 
             {isVitalsExpanded && (
               <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
-                {/* List log */}
                 {systemMetrics.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-40 overflow-y-auto pr-1">
                     {systemMetrics.map((log) => (
@@ -958,39 +1298,12 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                 ) : (
                   <p className="text-xs text-slate-500 py-2">No metric logs registered for this system.</p>
                 )}
-
-                {/* Inline logging form */}
                 <form onSubmit={handleAddMetric} className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-800/40">
-                  <input
-                    type="text"
-                    placeholder="Metric Name (e.g. BP)"
-                    value={newMetricName}
-                    onChange={(e) => setNewMetricName(e.target.value)}
-                    className="sm:col-span-2 bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                    required
-                  />
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="Value"
-                    value={newMetricVal}
-                    onChange={(e) => setNewMetricVal(e.target.value)}
-                    className="bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                    required
-                  />
+                  <input type="text" placeholder="Metric Name (e.g. BP)" value={newMetricName} onChange={(e) => setNewMetricName(e.target.value)} className="sm:col-span-2 bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200" required />
+                  <input type="number" step="any" placeholder="Value" value={newMetricVal} onChange={(e) => setNewMetricVal(e.target.value)} className="bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200" required />
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Unit"
-                      value={newMetricUnit}
-                      onChange={(e) => setNewMetricUnit(e.target.value)}
-                      className="w-16 bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                      required
-                    />
-                    <button
-                      type="submit"
-                      className="flex-grow flex items-center justify-center p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white text-xs transition-colors cursor-pointer"
-                    >
+                    <input type="text" placeholder="Unit" value={newMetricUnit} onChange={(e) => setNewMetricUnit(e.target.value)} className="w-16 bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200" required />
+                    <button type="submit" className="flex-grow flex items-center justify-center p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white text-xs transition-colors cursor-pointer">
                       <LucideIcons.Plus className="w-4 h-4" />
                     </button>
                   </div>
@@ -1017,14 +1330,8 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
               <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
                 {selectedLogDate && (
                   <div className="flex items-center justify-between bg-indigo-950/20 border border-indigo-900/30 p-2.5 rounded-xl mb-3 text-xs">
-                    <span className="text-slate-350">
-                      Showing logs for date: <strong className="text-slate-100">{selectedLogDate}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedLogDate(null)}
-                      className="text-[10px] text-rose-400 hover:text-rose-350 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer"
-                    >
+                    <span className="text-slate-350">Showing logs for date: <strong className="text-slate-100">{selectedLogDate}</strong></span>
+                    <button type="button" onClick={() => setSelectedLogDate(null)} className="text-[10px] text-rose-400 hover:text-rose-350 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer">
                       <span>Clear Date Filter</span>
                       <LucideIcons.X className="w-2.5 h-2.5" />
                     </button>
@@ -1034,38 +1341,18 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                   <div className="relative pl-4 border-l border-slate-800 space-y-5 max-h-[300px] overflow-y-auto pr-1">
                     {displayedEvents.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((e) => (
                       <div key={e.id} className="relative group">
-                        <span className={`absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-slate-950 border-2 ${
-                          e.type === 'Symptom' ? 'border-rose-500' :
-                          e.type === 'Diagnosis' ? 'border-amber-500' :
-                          e.type === 'Surgery' ? 'border-violet-500' : 'border-indigo-405'
-                        }`} />
-                        
+                        <span className={`absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-slate-950 border-2 ${e.type === 'Symptom' ? 'border-rose-500' : e.type === 'Diagnosis' ? 'border-amber-500' : e.type === 'Surgery' ? 'border-violet-500' : 'border-indigo-405'}`} />
                         <div className="flex justify-between items-start gap-2">
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-[9px] font-mono text-slate-500">{e.date}</span>
-                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                                {e.type}
-                              </span>
-                              {e.severity && (
-                                <span className={`text-[8px] font-bold px-1 rounded ${
-                                  e.severity === 'Severe' ? 'bg-rose-500/10 text-rose-400 border-rose-500/10' :
-                                  e.severity === 'Moderate' ? 'bg-amber-500/10 text-amber-400 border-amber-500/10' :
-                                  'bg-emerald-500/10 text-emerald-400 border-emerald-500/10'
-                                }`}>
-                                  {e.severity}
-                                </span>
-                              )}
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-900 border border-slate-800 text-slate-400">{e.type}</span>
+                              {e.severity && (<span className={`text-[8px] font-bold px-1 rounded ${e.severity === 'Severe' ? 'bg-rose-500/10 text-rose-400' : e.severity === 'Moderate' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{e.severity}</span>)}
                             </div>
                             <h4 className="text-xs font-bold text-slate-200 mt-1">{e.title}</h4>
                             <p className="text-xs text-slate-455 mt-1 leading-relaxed">{e.description}</p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => deleteEvent(e.id)}
-                            className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
-                            title="Delete event"
-                          >
+                          <button type="button" onClick={() => deleteEvent(e.id)} className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer" title="Delete event">
                             <LucideIcons.Trash className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -1095,75 +1382,29 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
 
             {isHabitsExpanded && (
               <div className="p-5 border-t border-slate-800/40 space-y-4 animate-fade-in bg-slate-900/10">
-                {/* List */}
                 {systemHabits.length > 0 ? (
                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                     {systemHabits.map((habit) => (
-                      <div 
-                        key={habit.id} 
-                        className={`p-3.5 rounded-xl border transition-all ${
-                          habit.isActive 
-                            ? 'bg-slate-900/40 border-slate-800' 
-                            : 'bg-slate-950/20 border-slate-900 opacity-50'
-                        }`}
-                      >
+                      <div key={habit.id} className={`p-3.5 rounded-xl border transition-all ${habit.isActive ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-950/20 border-slate-900 opacity-50'}`}>
                         <div className="flex justify-between items-center gap-2">
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => toggleHabitActive(habit.id)}
-                              className={`p-1 rounded-md transition-colors cursor-pointer ${
-                                habit.isActive 
-                                  ? 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20' 
-                                  : 'text-slate-650 bg-slate-900 hover:bg-slate-850'
-                              }`}
-                              title={habit.isActive ? "Deactivate habit" : "Activate habit"}
-                            >
-                              {habit.isActive ? (
-                                <LucideIcons.CheckSquare className="w-4 h-4" />
-                              ) : (
-                                <LucideIcons.Square className="w-4 h-4" />
-                              )}
+                            <button type="button" onClick={() => toggleHabitActive(habit.id)} className={`p-1 rounded-md transition-colors cursor-pointer ${habit.isActive ? 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20' : 'text-slate-650 bg-slate-900 hover:bg-slate-850'}`} title={habit.isActive ? 'Deactivate' : 'Activate'}>
+                              {habit.isActive ? <LucideIcons.CheckSquare className="w-4 h-4" /> : <LucideIcons.Square className="w-4 h-4" />}
                             </button>
                             <div>
-                              <span className="text-xs font-semibold text-slate-200 block leading-tight">
-                                {habit.name}
-                              </span>
-                              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-mono">
-                                {habit.frequency}
-                              </span>
+                              <span className="text-xs font-semibold text-slate-200 block leading-tight">{habit.name}</span>
+                              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-mono">{habit.frequency}</span>
                             </div>
                           </div>
-
-                          <button
-                            type="button"
-                            onClick={() => deleteHabit(habit.id)}
-                            className="text-slate-600 hover:text-rose-455 transition-colors p-1 cursor-pointer"
-                            title="Remove habit"
-                          >
+                          <button type="button" onClick={() => deleteHabit(habit.id)} className="text-slate-600 hover:text-rose-455 transition-colors p-1 cursor-pointer" title="Remove">
                             <LucideIcons.X className="w-3.5 h-3.5" />
                           </button>
                         </div>
-
-                        {/* Adherence Slider */}
                         {habit.isActive && (
                           <div className="mt-3.5 pt-2 border-t border-slate-900/60 flex items-center gap-3">
                             <span className="text-[10px] text-slate-400 font-mono w-8">Adhere:</span>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={habit.adherence}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value);
-                                updateHabitAdherence(habit.id, val);
-                                playSliderSound(Math.round(val / 10));
-                              }}
-                              className="flex-grow accent-indigo-500 h-1 rounded-lg cursor-pointer bg-slate-800"
-                            />
-                            <span className="text-xs font-mono font-bold text-slate-300 w-10 text-right">
-                              {habit.adherence}%
-                            </span>
+                            <input type="range" min="0" max="100" value={habit.adherence} onChange={(e) => { const val = parseInt(e.target.value); updateHabitAdherence(habit.id, val); playSliderSound(Math.round(val / 10)); }} className="flex-grow accent-indigo-500 h-1 rounded-lg cursor-pointer bg-slate-800" />
+                            <span className="text-xs font-mono font-bold text-slate-300 w-10 text-right">{habit.adherence}%</span>
                           </div>
                         )}
                       </div>
@@ -1172,31 +1413,14 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                 ) : (
                   <p className="text-xs text-slate-550">No protective habits defined. Add one below!</p>
                 )}
-
-                {/* Quick add Habit */}
                 <form onSubmit={handleAddHabit} className="flex gap-2 pt-3 border-t border-slate-800/40">
-                  <input
-                    type="text"
-                    placeholder="Log supplement, cardio frequency..."
-                    value={newHabitName}
-                    onChange={(e) => setNewHabitName(e.target.value)}
-                    className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                    required
-                  />
-                  <select
-                    value={newHabitFreq}
-                    onChange={(e: any) => setNewHabitFreq(e.target.value)}
-                    className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-455"
-                  >
+                  <input type="text" placeholder="Log supplement, cardio frequency..." value={newHabitName} onChange={(e) => setNewHabitName(e.target.value)} className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200" required />
+                  <select value={newHabitFreq} onChange={(e: any) => setNewHabitFreq(e.target.value)} className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-455">
                     <option value="Daily">Daily</option>
                     <option value="Weekly">Weekly</option>
                     <option value="As Needed">As Needed</option>
                   </select>
-                  <button
-                    type="submit"
-                    className="p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white transition-colors cursor-pointer"
-                    title="Add habit"
-                  >
+                  <button type="submit" className="p-1.5 rounded-lg bg-indigo-650 hover:bg-indigo-555 text-white transition-colors cursor-pointer" title="Add habit">
                     <LucideIcons.Plus className="w-4 h-4" />
                   </button>
                 </form>
@@ -1226,41 +1450,15 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                       <div key={goal.id} className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl flex items-start justify-between gap-3 group">
                         <div className="space-y-1 flex-grow">
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextStatus = 
-                                  goal.status === 'In Progress' ? 'Achieved' : 
-                                  goal.status === 'Achieved' ? 'Stalled' : 'In Progress';
-                                updateGoal({ ...goal, status: nextStatus });
-                              }}
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
-                                goal.status === 'Achieved' 
-                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                                  : goal.status === 'Stalled' 
-                                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' 
-                                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
-                              }`}
-                            >
+                            <button type="button" onClick={() => { const nextStatus = goal.status === 'In Progress' ? 'Achieved' : goal.status === 'Achieved' ? 'Stalled' : 'In Progress'; updateGoal({ ...goal, status: nextStatus }); }} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${goal.status === 'Achieved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : goal.status === 'Stalled' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'}`}>
                               {goal.status}
                             </button>
                             <span className="text-[9px] font-mono text-slate-500">Target: {goal.targetDate}</span>
                           </div>
-                          <span className={`text-xs font-semibold text-slate-200 block ${goal.status === 'Achieved' ? 'line-through text-slate-500' : ''}`}>
-                            {goal.title}
-                          </span>
-                          {goal.metricTarget && (
-                            <span className="inline-block text-[9px] text-slate-405 bg-slate-850 px-1.5 py-0.5 rounded border border-slate-800">
-                              Target Param: {goal.metricTarget}
-                            </span>
-                          )}
+                          <span className={`text-xs font-semibold text-slate-200 block ${goal.status === 'Achieved' ? 'line-through text-slate-500' : ''}`}>{goal.title}</span>
+                          {goal.metricTarget && (<span className="inline-block text-[9px] text-slate-405 bg-slate-850 px-1.5 py-0.5 rounded border border-slate-800">Target Param: {goal.metricTarget}</span>)}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => deleteGoal(goal.id)}
-                          className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
-                          title="Remove goal"
-                        >
+                        <button type="button" onClick={() => deleteGoal(goal.id)} className="text-slate-605 hover:text-rose-405 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer" title="Remove goal">
                           <LucideIcons.Trash className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1269,37 +1467,13 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
                 ) : (
                   <p className="text-xs text-slate-550">No goals set yet.</p>
                 )}
-
-                {/* Quick add Goal */}
                 <form onSubmit={handleAddGoal} className="space-y-2 pt-2 border-t border-slate-800/40">
-                  <input
-                    type="text"
-                    placeholder="Goal title (e.g. Reduce BP to normal)"
-                    value={newGoalTitle}
-                    onChange={(e) => setNewGoalTitle(e.target.value)}
-                    className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                    required
-                  />
+                  <input type="text" placeholder="Goal title (e.g. Reduce BP to normal)" value={newGoalTitle} onChange={(e) => setNewGoalTitle(e.target.value)} className="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200" required />
                   <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="date"
-                      value={newGoalDate}
-                      onChange={(e) => setNewGoalDate(e.target.value)}
-                      className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-450"
-                      required
-                    />
+                    <input type="date" value={newGoalDate} onChange={(e) => setNewGoalDate(e.target.value)} className="bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-450" required />
                     <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Target (e.g. <120)"
-                        value={newGoalMetric}
-                        onChange={(e) => setNewGoalMetric(e.target.value)}
-                        className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-200"
-                      />
-                      <button
-                        type="submit"
-                        className="px-3 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white transition-colors cursor-pointer"
-                      >
+                      <input type="text" placeholder="Target (e.g. <120)" value={newGoalMetric} onChange={(e) => setNewGoalMetric(e.target.value)} className="flex-grow bg-slate-900/60 border border-slate-800 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-indigo-500 text-slate-200" />
+                      <button type="submit" className="px-3 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white transition-colors cursor-pointer">
                         <LucideIcons.Plus className="w-4 h-4" />
                       </button>
                     </div>
@@ -1310,6 +1484,7 @@ export const SystemDetail: React.FC<SystemDetailProps> = ({ systemId, onBack }) 
           </div>
 
         </div>
+
       )}
       </div>
     </div>

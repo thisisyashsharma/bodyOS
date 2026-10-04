@@ -1,5 +1,15 @@
 export type SystemStatus = 'Optimal' | 'Stable' | 'Suboptimal' | 'Attention Required';
 
+export interface PrecisionParameter {
+  id: string;
+  systemId: string;
+  title: string;         // e.g., "Sleep Hours", "Relaxed Neck"
+  rangeStart: number;    // e.g., 0
+  rangeEnd: number;      // e.g., 8, or 10
+  weightage: number;     // Percentage (0-100), all params in a system must sum to 100
+  currentValue: number;  // Current daily input value (within range)
+}
+
 export interface BodySystem {
   id: string;
   name: string;
@@ -11,6 +21,7 @@ export interface BodySystem {
   subjectiveRating: number; // 1 to 10 scale
   precisionEnabled: boolean; // true if the user wants detailed tracking
   isTracking: boolean; // true if system is actively tracked
+  precisionParameters: PrecisionParameter[]; // User-defined precision parameters
 }
 
 export type EventType = 'Symptom' | 'Diagnosis' | 'Surgery' | 'Test Result' | 'Checkup' | 'Medication Change';
