@@ -519,7 +519,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigateToSystem }) => {
                         </div>
                         {showInfo && (
                           <p className="text-slate-400 mt-2 animate-fade-in">
-                            Precision mode maps average habit adherence (40%), vital log thresholds (40%), and subtracts points for active symptoms in the last 14 days (-20% maximum). Click <strong>Examine detailed logs & goals</strong> below to log metrics.
+                            Precision mode automatically aggregates your custom parameters based on their individual weightages to generate a holistic daily score. Click <strong>Examine detailed logs & goals</strong> below to add parameters or input daily values.
                           </p>
                         )}
                       </div>

@@ -48,8 +48,6 @@ export const QuickBodyScanModal: React.FC<QuickBodyScanModalProps> = ({
   systems,
   onSaveAll,
 }) => {
-  if (!isOpen) return null;
-
   const activeSystems = systems.filter((sys) => sys.isTracking);
 
   const [expandedDescIds, setExpandedDescIds] = useState<Set<string>>(new Set());
@@ -88,6 +86,8 @@ export const QuickBodyScanModal: React.FC<QuickBodyScanModalProps> = ({
     e.preventDefault();
     onSaveAll(ratings);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl overflow-y-auto p-4 sm:p-6 flex items-center justify-center animate-fade-in">

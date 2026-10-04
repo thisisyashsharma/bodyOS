@@ -6,7 +6,8 @@ import type {
   HealthGoal, 
   MetricLog, 
   SystemScoreHistory,
-  SystemStatus
+  SystemStatus,
+  PrecisionParameter
 } from '../types';
 
 interface DashboardContextType {
@@ -23,6 +24,12 @@ interface DashboardContextType {
   logSystemRating: (systemId: string, rating: number, date: string, time: string) => void;
   togglePrecisionMode: (systemId: string, enabled: boolean) => void;
   updateSystemDescription: (systemId: string, description: string) => void;
+  
+  // Precision Parameter operations
+  addPrecisionParameter: (systemId: string, title: string, rangeStart: number, rangeEnd: number) => void;
+  deletePrecisionParameter: (systemId: string, paramId: string) => void;
+  updatePrecisionValue: (systemId: string, paramId: string, value: number) => void;
+  updatePrecisionWeightages: (systemId: string, weightages: { paramId: string; weightage: number }[]) => void;
   
   // System Tracking operations
   startTrackingSystem: (systemId: string) => void;
@@ -59,16 +66,16 @@ const DashboardContext = createContext<DashboardContextType | undefined>(undefin
 
 // Initial Systems definition with isTracking defaults (only respiratory, nervous, and integumentary by default)
 const DEFAULT_SYSTEMS: BodySystem[] = [
-  { id: 'cardio', name: 'Cardiovascular', description: 'Heart, blood vessels, circulation, heart rate, and blood pressure.', iconName: 'Heart', colorClass: 'cardio', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false },
-  { id: 'nervous', name: 'Nervous & Sleep', description: 'Brain, spinal cord, sleep quality, cognitive performance, and mood.', iconName: 'Brain', colorClass: 'nervous', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: true },
-  { id: 'digestive', name: 'Digestive & Gut', description: 'Stomach, intestines, digestion, microbiome, and nutrient absorption.', iconName: 'Activity', colorClass: 'digestive', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: false },
-  { id: 'musculoskeletal', name: 'Musculoskeletal', description: 'Muscles, bones, joints, spine, overall strength, and joint mobility.', iconName: 'Zap', colorClass: 'musculoskeletal', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false },
-  { id: 'respiratory', name: 'Respiratory', description: 'Lungs, trachea, breathing patterns, lung capacity, and oxygenation.', iconName: 'Wind', colorClass: 'respiratory', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: true },
-  { id: 'immune', name: 'Immune & Lymphatic', description: 'Immune cells, lymph nodes, recovery speed, allergy responses, and defenses.', iconName: 'Shield', colorClass: 'immune', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false },
-  { id: 'endocrine', name: 'Endocrine & Metabolic', description: 'Hormones, blood sugar, thyroid, metabolic rate, and energy regulation.', iconName: 'Flame', colorClass: 'endocrine', status: 'Suboptimal', score: 70, subjectiveRating: 7, precisionEnabled: false, isTracking: false },
-  { id: 'integumentary', name: 'Integumentary', description: 'Skin health, hair, nails, and protective barriers.', iconName: 'Sparkles', colorClass: 'integumentary', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: true },
-  { id: 'urinary', name: 'Urinary & Renal', description: 'Kidneys, bladder, fluid balance, hydration levels, and toxicity filtration.', iconName: 'Droplet', colorClass: 'urinary', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: false },
-  { id: 'reproductive', name: 'Reproductive', description: 'Hormones, libido, sexual health, and fertility markers.', iconName: 'HeartHandshake', colorClass: 'reproductive', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false },
+  { id: 'cardio', name: 'Cardiovascular', description: 'Heart, blood vessels, circulation, heart rate, and blood pressure.', iconName: 'Heart', colorClass: 'cardio', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false, precisionParameters: [] },
+  { id: 'nervous', name: 'Nervous & Sleep', description: 'Brain, spinal cord, sleep quality, cognitive performance, and mood.', iconName: 'Brain', colorClass: 'nervous', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: true, precisionParameters: [] },
+  { id: 'digestive', name: 'Digestive & Gut', description: 'Stomach, intestines, digestion, microbiome, and nutrient absorption.', iconName: 'Activity', colorClass: 'digestive', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: false, precisionParameters: [] },
+  { id: 'musculoskeletal', name: 'Musculoskeletal', description: 'Muscles, bones, joints, spine, overall strength, and joint mobility.', iconName: 'Zap', colorClass: 'musculoskeletal', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false, precisionParameters: [] },
+  { id: 'respiratory', name: 'Respiratory', description: 'Lungs, trachea, breathing patterns, lung capacity, and oxygenation.', iconName: 'Wind', colorClass: 'respiratory', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: true, precisionParameters: [] },
+  { id: 'immune', name: 'Immune & Lymphatic', description: 'Immune cells, lymph nodes, recovery speed, allergy responses, and defenses.', iconName: 'Shield', colorClass: 'immune', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false, precisionParameters: [] },
+  { id: 'endocrine', name: 'Endocrine & Metabolic', description: 'Hormones, blood sugar, thyroid, metabolic rate, and energy regulation.', iconName: 'Flame', colorClass: 'endocrine', status: 'Suboptimal', score: 70, subjectiveRating: 7, precisionEnabled: false, isTracking: false, precisionParameters: [] },
+  { id: 'integumentary', name: 'Integumentary', description: 'Skin health, hair, nails, and protective barriers.', iconName: 'Sparkles', colorClass: 'integumentary', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: true, precisionParameters: [] },
+  { id: 'urinary', name: 'Urinary & Renal', description: 'Kidneys, bladder, fluid balance, hydration levels, and toxicity filtration.', iconName: 'Droplet', colorClass: 'urinary', status: 'Optimal', score: 90, subjectiveRating: 9, precisionEnabled: false, isTracking: false, precisionParameters: [] },
+  { id: 'reproductive', name: 'Reproductive', description: 'Hormones, libido, sexual health, and fertility markers.', iconName: 'HeartHandshake', colorClass: 'reproductive', status: 'Stable', score: 80, subjectiveRating: 8, precisionEnabled: false, isTracking: false, precisionParameters: [] },
 ];
 
 // Initial seeded events
@@ -318,6 +325,17 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       // MODE 2: Precision scoring mode
+      // If custom precision parameters exist, use weighted aggregation
+      if (sys.precisionParameters && sys.precisionParameters.length > 0) {
+        const { rating, score: precScore } = calculateAggregatedScore(sys.precisionParameters);
+        let status: SystemStatus = 'Stable';
+        if (precScore >= 90) status = 'Optimal';
+        else if (precScore >= 70) status = 'Stable';
+        else if (precScore >= 50) status = 'Suboptimal';
+        else status = 'Attention Required';
+        return { ...sys, subjectiveRating: rating, score: precScore, status };
+      }
+      
       let score = 100;
       
       // Habits Impact (40%)
@@ -607,6 +625,125 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setScoreHistory(generateHistoricalScores());
   };
 
+  // Calculate aggregated score from precision parameters
+  const calculateAggregatedScore = (params: PrecisionParameter[]): { rating: number; score: number } => {
+    if (params.length === 0) return { rating: 0, score: 0 };
+    let weightedSum = 0;
+    let totalWeightage = 0;
+    params.forEach(p => {
+      const range = p.rangeEnd - p.rangeStart;
+      if (range <= 0) return;
+      const normalized = (p.currentValue - p.rangeStart) / range; // 0 to 1
+      weightedSum += normalized * p.weightage;
+      totalWeightage += p.weightage;
+    });
+    if (totalWeightage === 0) return { rating: 0, score: 0 };
+    const normalizedScore = weightedSum / totalWeightage; // 0 to 1
+    const rating = Math.round(normalizedScore * 9 + 1); // 1 to 10
+    const score = Math.round(normalizedScore * 100); // 0 to 100
+    return { rating: Math.min(10, Math.max(1, rating)), score: Math.min(100, Math.max(0, score)) };
+  };
+
+  const addPrecisionParameter = (systemId: string, title: string, rangeStart: number, rangeEnd: number) => {
+    setSystems(prev => prev.map(sys => {
+      if (sys.id !== systemId) return sys;
+      const newParam: PrecisionParameter = {
+        id: `pp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        systemId,
+        title,
+        rangeStart,
+        rangeEnd,
+        weightage: 0,
+        currentValue: rangeStart,
+      };
+      const existingParams = sys.precisionParameters;
+      let updatedParams: PrecisionParameter[];
+      if (existingParams.length === 0) {
+        // First parameter gets 100%
+        newParam.weightage = 100;
+        updatedParams = [newParam];
+      } else {
+        // Take weightage from the last parameter
+        const lastParam = existingParams[existingParams.length - 1];
+        const takeFromLast = Math.floor(lastParam.weightage / 2);
+        newParam.weightage = takeFromLast;
+        updatedParams = existingParams.map((p, i) => 
+          i === existingParams.length - 1 
+            ? { ...p, weightage: p.weightage - takeFromLast }
+            : p
+        );
+        updatedParams.push(newParam);
+      }
+      return { ...sys, precisionParameters: updatedParams };
+    }));
+  };
+
+  const deletePrecisionParameter = (systemId: string, paramId: string) => {
+    setSystems(prev => prev.map(sys => {
+      if (sys.id !== systemId) return sys;
+      const remaining = sys.precisionParameters.filter(p => p.id !== paramId);
+      if (remaining.length === 0) {
+        return { ...sys, precisionParameters: [] };
+      }
+      if (remaining.length === 1) {
+        // Single param gets 100%
+        return { ...sys, precisionParameters: [{ ...remaining[0], weightage: 100 }] };
+      }
+      // Redistribute deleted param's weightage to last param
+      const deletedParam = sys.precisionParameters.find(p => p.id === paramId);
+      const freedWeightage = deletedParam?.weightage || 0;
+      const updatedRemaining = remaining.map((p, i) => 
+        i === remaining.length - 1 
+          ? { ...p, weightage: p.weightage + freedWeightage }
+          : p
+      );
+      const { rating, score } = calculateAggregatedScore(updatedRemaining);
+      let status: SystemStatus = 'Stable';
+      if (score >= 90) status = 'Optimal';
+      else if (score >= 70) status = 'Stable';
+      else if (score >= 50) status = 'Suboptimal';
+      else status = 'Attention Required';
+      return { ...sys, precisionParameters: updatedRemaining, subjectiveRating: rating, score, status };
+    }));
+  };
+
+  const updatePrecisionValue = (systemId: string, paramId: string, value: number) => {
+    setSystems(prev => prev.map(sys => {
+      if (sys.id !== systemId) return sys;
+      const updatedParams = sys.precisionParameters.map(p => 
+        p.id === paramId 
+          ? { ...p, currentValue: Math.min(p.rangeEnd, Math.max(p.rangeStart, value)) }
+          : p
+      );
+      // Recalculate aggregated score
+      const { rating, score } = calculateAggregatedScore(updatedParams);
+      let status: SystemStatus = 'Stable';
+      if (score >= 90) status = 'Optimal';
+      else if (score >= 70) status = 'Stable';
+      else if (score >= 50) status = 'Suboptimal';
+      else status = 'Attention Required';
+      return { ...sys, precisionParameters: updatedParams, subjectiveRating: rating, score, status };
+    }));
+  };
+
+  const updatePrecisionWeightages = (systemId: string, weightages: { paramId: string; weightage: number }[]) => {
+    setSystems(prev => prev.map(sys => {
+      if (sys.id !== systemId) return sys;
+      const updatedParams = sys.precisionParameters.map(p => {
+        const w = weightages.find(w => w.paramId === p.id);
+        return w ? { ...p, weightage: w.weightage } : p;
+      });
+      // Recalculate aggregated score
+      const { rating, score } = calculateAggregatedScore(updatedParams);
+      let status: SystemStatus = 'Stable';
+      if (score >= 90) status = 'Optimal';
+      else if (score >= 70) status = 'Stable';
+      else if (score >= 50) status = 'Suboptimal';
+      else status = 'Attention Required';
+      return { ...sys, precisionParameters: updatedParams, subjectiveRating: rating, score, status };
+    }));
+  };
+
   return (
     <DashboardContext.Provider value={{
       systems,
@@ -637,7 +774,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       addMetricLog,
       deleteMetricLog,
       recalculateScores,
-      resetAllData
+      resetAllData,
+      addPrecisionParameter,
+      deletePrecisionParameter,
+      updatePrecisionValue,
+      updatePrecisionWeightages
     }}>
       {children}
     </DashboardContext.Provider>
